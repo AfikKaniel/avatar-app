@@ -69,9 +69,6 @@ export default function ChatPage() {
         voice: {
           voiceId: voiceId,
           emotion: VoiceEmotion.FRIENDLY,
-          elevenlabsSettings: {
-            model: "eleven_flash_v2_5", // lowest latency
-          },
         },
         language: "en",
       });

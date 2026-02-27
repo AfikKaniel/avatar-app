@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   }
 
   const res = await fetch(
-    "https://api.heygen.com/v2/photo_avatar/avatar_group/train",
+    "https://api.heygen.com/v2/photo_avatar/train",
     {
       method: "POST",
       headers: {

@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
   }
 
   const res = await fetch(
-    `https://api.heygen.com/v2/photo_avatar/avatar_group?group_id=${groupId}`,
+    `https://api.heygen.com/v2/photo_avatar/${groupId}`,
     {
       headers: { "X-Api-Key": apiKey },
     }
@@ -33,8 +33,10 @@ export async function GET(req: NextRequest) {
 
   const { data } = await res.json();
 
-  // After training, the group contains individual avatars — grab the first one's ID
-  const avatarId: string | null = data?.avatars?.[0]?.avatar_id ?? null;
+  // HeyGen returns data.id (same as groupId) and data.status
+  // The avatar_id for streaming is data.id once status === "completed"
+  const avatarId: string | null =
+    data?.status === "completed" ? (data?.id ?? null) : null;
 
   return NextResponse.json({
     status: data?.status ?? "pending",

@@ -72,3 +72,4 @@ if (!createRes.ok) {
     groupId: avatarData.group_id ?? avatarData.id,
   });
 }
+// force redeploy Fri Feb 27 22:49:13 IST 2026

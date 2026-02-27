@@ -50,7 +50,12 @@ if (!uploadRes.ok) {
         "X-Api-Key": apiKey,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ name: "User Avatar", image_key: imageKey }),
+      body: JSON.stringify({
+        name: "User Avatar",
+        image_key: imageKey,
+        prompt:
+          "A high-quality digital avatar based on the person in the attached photo. The subject should be rendered in a relaxed, informal standing pose with both feet planted firmly on the ground, keeping their original likeness. They are dressed in a clean, minimalist white t-shirt, dark slim-fit denim jeans, and casual sneakers.\n\nThe Eyes: Give the subject subtle, light blue glowing irises. The glow must be 'lean' and contained strictly within the eyeballs, with no lens flare or light spilling onto the rest of the face.\n\nThe Setting: The subject stands on a clean, solid, circular blue platform with a matte finish—no tech patterns or glowing lines. The background is a flat, deep navy blue (HEX #000080 style), completely clear of any electric lines, textures, or 'tech' elements. Studio lighting, sharp focus, professional clean aesthetic.",
+      }),
     }
   );
 

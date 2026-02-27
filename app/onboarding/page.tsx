@@ -64,8 +64,27 @@ export default function OnboardingPage() {
       });
       if (!trainRes.ok) throw new Error("Avatar training failed");
 
-      // ── 4. Save IDs to localStorage so the chat page can use them ───────
-      localStorage.setItem("avatarId", avatarId);
+      // ── 4. Poll until training completes ────────────────────────────────
+      let trainedAvatarId: string | null = null;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        await new Promise((r) => setTimeout(r, 5000)); // wait 5 s
+        const statusRes = await fetch(`/api/heygen/status?groupId=${groupId}`);
+        if (!statusRes.ok) continue;
+        const { status, avatarId: readyId } = await statusRes.json();
+
+        const elapsed = Math.round(((attempt + 1) * 5) / 60);
+        setStatus(`Training your avatar… (${elapsed} min elapsed)`);
+
+        if (status === "completed" && readyId) {
+          trainedAvatarId = readyId;
+          break;
+        }
+        if (status === "failed") throw new Error("Avatar training failed on HeyGen's side");
+      }
+      if (!trainedAvatarId) throw new Error("Training timed out — please try again");
+
+      // ── 5. Save IDs to localStorage so the chat page can use them ───────
+      localStorage.setItem("avatarId", trainedAvatarId);
       localStorage.setItem("voiceId", voiceId);
 
       setStep("done");

@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   const uploadRes = await fetch("https://upload.heygen.com/v1/asset", {
     method: "POST",
     headers: {
-      "X-API-KEY": apiKey,
+      "X-Api-Key": apiKey,
       "Content-Type": "image/jpeg",
     },
     body: photoBuffer,

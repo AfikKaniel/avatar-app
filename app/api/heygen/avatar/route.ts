@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.HEYGEN_API_KEY;
-  console.log("HEYGEN KEY:", apiKey ? apiKey.slice(0, 15) : "MISSING");
+  console.error("HEYGEN KEY:", apiKey ? apiKey.slice(0, 15) : "MISSING");
 
   if (!apiKey) {
     return NextResponse.json({ error: "HEYGEN_API_KEY not set" }, { status: 500 });

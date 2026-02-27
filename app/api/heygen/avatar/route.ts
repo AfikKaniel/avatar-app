@@ -39,7 +39,7 @@ if (!uploadRes.ok) {
 }
 
   const { data: assetData } = await uploadRes.json();
-  const imageKey: string = assetData.image_key;
+  const imageKey: string = assetData.data.image_key;
 
   // ── 3. Create a Photo Avatar Group ──────────────────────────────────────
   const createRes = await fetch(

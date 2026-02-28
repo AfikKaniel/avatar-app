@@ -55,14 +55,15 @@ export default function OnboardingPage() {
       if (!avatarRes.ok) throw new Error("Avatar creation failed");
       const { avatarId, groupId } = await avatarRes.json();
 
-      // ── 3. Train the avatar ─────────────────────────────────────────────
+      // ── 3. Trigger training (non-fatal — image may already be processed) ─
       setStatus("Training your avatar (this takes ~2 minutes)…");
-      const trainRes = await fetch("/api/heygen/train", {
+      await fetch("/api/heygen/train", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ groupId }),
       });
-      if (!trainRes.ok) throw new Error("Avatar training failed");
+      // Don't throw on failure — HeyGen sometimes auto-completes the avatar
+      // before the explicit train call can run. We'll detect completion below.
 
       // ── 4. Poll until training completes ────────────────────────────────
       let trainedAvatarId: string | null = null;

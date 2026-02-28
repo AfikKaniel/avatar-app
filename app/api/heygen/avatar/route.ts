@@ -58,7 +58,7 @@ export async function POST(req: NextRequest) {
 
   const avatarData = await createRes.json();
   return NextResponse.json({
-    avatarId: avatarData.id,
-    groupId: avatarData.group_id ?? avatarData.id,
+    avatarId: avatarData.data.id,
+    groupId: avatarData.data.group_id ?? avatarData.data.id,
   });
 }

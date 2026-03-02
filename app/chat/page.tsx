@@ -62,14 +62,15 @@ export default function ChatPage() {
       avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => setState("ready"));
       avatar.on(StreamingEvents.STREAM_DISCONNECTED, () => setState("idle"));
 
-      // 4. Start the avatar with the user's ElevenLabs cloned voice
+      // 4. Start the avatar session.
+      // HeyGen streaming requires an "Interactive Avatar" ID — photo avatars created
+      // via the Photo Avatar API are not streaming-compatible, so we use "default".
+      // voiceId from ElevenLabs cannot be passed directly to HeyGen streaming;
+      // HeyGen uses its own TTS voice here.
       await avatar.createStartAvatar({
         quality: AvatarQuality.High,
-        avatarName: avatarId,
-        voice: {
-          voiceId: voiceId,
-          emotion: VoiceEmotion.FRIENDLY,
-        },
+        avatarName: "default",
+        voice: { emotion: VoiceEmotion.FRIENDLY },
         language: "en",
       });
 

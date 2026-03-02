@@ -15,6 +15,7 @@ type SessionState = "idle" | "connecting" | "ready" | "speaking" | "error";
 export default function ChatPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const avatarRef = useRef<StreamingAvatar | null>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const [state, setState] = useState<SessionState>("idle");
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputText, setInputText] = useState("");
@@ -22,18 +23,58 @@ export default function ChatPage() {
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-  // Load saved avatar/voice IDs from localStorage (set during onboarding)
-  const avatarId =
-    typeof window !== "undefined" ? localStorage.getItem("avatarId") ?? "" : "";
+  // Load saved voice ID from localStorage (set during onboarding)
   const voiceId =
     typeof window !== "undefined" ? localStorage.getItem("voiceId") ?? "" : "";
 
+  // ── Speak text using ElevenLabs cloned voice + HeyGen lip animation ──────
+  async function speakWithClonedVoice(text: string) {
+    if (!avatarRef.current) return;
+
+    setState("speaking");
+
+    // Stop any currently playing audio
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
+
+    // Fetch ElevenLabs TTS audio and trigger HeyGen lip animation in parallel
+    const [audioRes] = await Promise.all([
+      voiceId
+        ? fetch("/api/elevenlabs/tts", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ voiceId, text }),
+          })
+        : Promise.resolve(null),
+      avatarRef.current.speak({
+        text,
+        task_type: TaskType.REPEAT,
+        taskMode: TaskMode.ASYNC,
+      }),
+    ]);
+
+    if (audioRes?.ok) {
+      const blob = await audioRes.blob();
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      currentAudioRef.current = audio;
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        currentAudioRef.current = null;
+        setState("ready");
+      };
+      audio.play();
+    } else {
+      // No ElevenLabs voice — HeyGen TTS already running, state managed by events
+    }
+  }
+
   // ── Start streaming avatar session ─────────────────────────────────────
   async function startSession() {
-    if (!avatarId || !voiceId) {
-      setErrorMsg(
-        "No avatar found. Please complete onboarding first."
-      );
+    if (!voiceId) {
+      setErrorMsg("No avatar found. Please complete onboarding first.");
       setState("error");
       return;
     }
@@ -49,24 +90,19 @@ export default function ChatPage() {
       const avatar = new StreamingAvatar({ token });
       avatarRef.current = avatar;
 
-      // 3. Wire up the video stream
+      // 3. Wire up the video stream — muted so ElevenLabs audio plays instead
       avatar.on(StreamingEvents.STREAM_READY, (e) => {
         if (videoRef.current) {
           videoRef.current.srcObject = e.detail as MediaStream;
+          videoRef.current.muted = true; // ElevenLabs provides the audio
           videoRef.current.play();
         }
         setState("ready");
       });
 
-      avatar.on(StreamingEvents.AVATAR_START_TALKING, () => setState("speaking"));
-      avatar.on(StreamingEvents.AVATAR_STOP_TALKING, () => setState("ready"));
       avatar.on(StreamingEvents.STREAM_DISCONNECTED, () => setState("idle"));
 
-      // 4. Start the avatar session.
-      // HeyGen streaming requires an "Interactive Avatar" ID — photo avatars created
-      // via the Photo Avatar API are not streaming-compatible, so we use "default".
-      // voiceId from ElevenLabs cannot be passed directly to HeyGen streaming;
-      // HeyGen uses its own TTS voice here.
+      // 4. Start the avatar session with HeyGen's default interactive avatar
       await avatar.createStartAvatar({
         quality: AvatarQuality.High,
         avatarName: "default",
@@ -74,14 +110,11 @@ export default function ChatPage() {
         language: "en",
       });
 
-      // 5. Greet the user
-      await avatar.speak({
-        text: "Hey! It's me — well, a version of you. Ask me anything or just have a conversation!",
-        task_type: TaskType.REPEAT,
-        taskMode: TaskMode.ASYNC,
-      });
-
-      addMessage("avatar", "Hey! It's me — well, a version of you. Ask me anything or just have a conversation!");
+      // 5. Greet the user with their cloned voice
+      const greeting =
+        "Hey! It's me — well, a version of you. Ask me anything or just have a conversation!";
+      addMessage("avatar", greeting);
+      await speakWithClonedVoice(greeting);
     } catch (e: unknown) {
       setErrorMsg(e instanceof Error ? e.message : "Failed to start session");
       setState("error");
@@ -96,7 +129,6 @@ export default function ChatPage() {
     setInputText("");
 
     try {
-      // Call our backend which calls Claude for a smart reply
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -106,15 +138,10 @@ export default function ChatPage() {
       const { reply } = await res.json();
 
       addMessage("avatar", reply);
-
-      // Make the avatar speak the reply in the user's cloned voice
-      await avatarRef.current.speak({
-        text: reply,
-        task_type: TaskType.REPEAT,
-        taskMode: TaskMode.ASYNC,
-      });
+      await speakWithClonedVoice(reply);
     } catch (e) {
       console.error(e);
+      setState("ready");
     }
   }
 
@@ -151,11 +178,20 @@ export default function ChatPage() {
 
   // ── Interrupt the avatar mid-speech ────────────────────────────────────
   async function interrupt() {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
     await avatarRef.current?.interrupt();
+    setState("ready");
   }
 
   // ── End session ────────────────────────────────────────────────────────
   async function endSession() {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
     await avatarRef.current?.stopAvatar();
     avatarRef.current = null;
     setState("idle");
@@ -168,7 +204,10 @@ export default function ChatPage() {
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => { avatarRef.current?.stopAvatar(); };
+    return () => {
+      currentAudioRef.current?.pause();
+      avatarRef.current?.stopAvatar();
+    };
   }, []);
 
   return (
@@ -194,7 +233,6 @@ export default function ChatPage() {
           className="w-full h-full object-cover"
         />
 
-        {/* Overlay when not started */}
         {state === "idle" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
             <p className="text-gray-400">Your avatar is waiting</p>
@@ -224,12 +262,14 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* Speaking indicator */}
         {state === "speaking" && (
           <div className="absolute bottom-3 left-3 flex items-center gap-2 bg-black/60 rounded-full px-3 py-1">
             <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
             <span className="text-xs text-white">Speaking</span>
-            <button onClick={interrupt} className="text-xs text-gray-300 hover:text-white ml-1">
+            <button
+              onClick={interrupt}
+              className="text-xs text-gray-300 hover:text-white ml-1"
+            >
               Interrupt
             </button>
           </div>

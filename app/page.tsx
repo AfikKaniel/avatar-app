@@ -27,7 +27,7 @@ export default function Home() {
       </div>
 
       <p className="text-xs text-gray-600 max-w-sm">
-        Powered by HeyGen · ElevenLabs · Claude
+        Powered by Hedra · ElevenLabs · Claude
       </p>
     </main>
   );

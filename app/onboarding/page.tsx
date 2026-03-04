@@ -9,32 +9,25 @@ type Step = "photo" | "voice" | "processing" | "done";
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const [step, setStep] = useState<Step>("photo");
+  const [step, setStep]           = useState<Step>("photo");
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
+  const [status, setStatus]       = useState("");
+  const [error, setError]         = useState("");
 
-  // Called when the user captures their photo
   function handlePhotoReady(blob: Blob) {
     setPhotoBlob(blob);
     setStep("voice");
   }
 
-  // Called when the user finishes recording their voice
-  function handleVoiceReady(blob: Blob) {
-    setVoiceBlob(blob);
-  }
-
-  // Submit everything to the backend APIs
   async function handleSubmit() {
     if (!photoBlob || !voiceBlob) return;
     setStep("processing");
     setError("");
 
     try {
-      // ── 1. Clone voice with ElevenLabs ─────────────────────────────────
-      setStatus("Cloning your voice with ElevenLabs…");
+      // ── 1. Clone voice with ElevenLabs ──────────────────────────────────
+      setStatus("Cloning your voice…");
       const voiceForm = new FormData();
       voiceForm.append("audio", voiceBlob, "voice.webm");
       const voiceRes = await fetch("/api/elevenlabs/clone", {
@@ -44,49 +37,21 @@ export default function OnboardingPage() {
       if (!voiceRes.ok) throw new Error("Voice cloning failed");
       const { voiceId } = await voiceRes.json();
 
-      // ── 2. Upload photo + create HeyGen avatar ──────────────────────────
-      setStatus("Creating your HeyGen photo avatar…");
-      const avatarForm = new FormData();
-      avatarForm.append("photo", photoBlob, "photo.jpg");
-      const avatarRes = await fetch("/api/heygen/avatar", {
+      // ── 2. Save photo + voice_id to backend (for the Hedra agent) ───────
+      setStatus("Setting up your avatar…");
+      const saveForm = new FormData();
+      saveForm.append("photo",   photoBlob, "photo.jpg");
+      saveForm.append("voiceId", voiceId);
+      const saveRes = await fetch("/api/hedra/save-photo", {
         method: "POST",
-        body: avatarForm,
+        body: saveForm,
       });
-      if (!avatarRes.ok) throw new Error("Avatar creation failed");
-      const { avatarId, groupId } = await avatarRes.json();
+      if (!saveRes.ok) throw new Error("Avatar setup failed");
+      const { photoUrl } = await saveRes.json();
 
-      // ── 3. Trigger training (non-fatal — image may already be processed) ─
-      setStatus("Training your avatar (this takes ~2 minutes)…");
-      await fetch("/api/heygen/train", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ groupId }),
-      });
-      // Don't throw on failure — HeyGen sometimes auto-completes the avatar
-      // before the explicit train call can run. We'll detect completion below.
-
-      // ── 4. Poll until training completes ────────────────────────────────
-      let trainedAvatarId: string | null = null;
-      for (let attempt = 0; attempt < 40; attempt++) {
-        await new Promise((r) => setTimeout(r, 5000)); // wait 5 s
-        const statusRes = await fetch(`/api/heygen/status?groupId=${groupId}`);
-        if (!statusRes.ok) continue;
-        const { status, avatarId: readyId } = await statusRes.json();
-
-        const elapsed = Math.round(((attempt + 1) * 5) / 60);
-        setStatus(`Training your avatar… (${elapsed} min elapsed)`);
-
-        if (status === "completed" && readyId) {
-          trainedAvatarId = readyId;
-          break;
-        }
-        if (status === "failed") throw new Error("Avatar training failed on HeyGen's side");
-      }
-      if (!trainedAvatarId) throw new Error("Training timed out — please try again");
-
-      // ── 5. Save IDs to localStorage so the chat page can use them ───────
-      localStorage.setItem("avatarId", trainedAvatarId);
-      localStorage.setItem("voiceId", voiceId);
+      // ── 3. Persist voice_id + photoUrl for the chat page ─────────────────
+      localStorage.setItem("voiceId",  voiceId);
+      localStorage.setItem("photoUrl", photoUrl);
 
       setStep("done");
     } catch (e: unknown) {
@@ -97,7 +62,7 @@ export default function OnboardingPage() {
 
   return (
     <main className="flex flex-col items-center justify-center min-h-screen px-4 py-12 gap-8">
-      {/* Progress bar */}
+      {/* Progress indicators */}
       <div className="flex gap-2 items-center">
         {(["photo", "voice", "processing"] as const).map((s, i) => (
           <div key={s} className="flex items-center gap-2">
@@ -123,8 +88,8 @@ export default function OnboardingPage() {
         <div className="w-full max-w-md space-y-4 text-center">
           <h2 className="text-2xl font-bold">Take Your Photo</h2>
           <p className="text-gray-400 text-sm">
-            Look straight at the camera with good lighting. This will be used
-            to create your avatar face.
+            Look straight at the camera with good lighting. This becomes your
+            avatar face.
           </p>
           <PhotoCapture onCapture={handlePhotoReady} />
         </div>
@@ -168,9 +133,7 @@ export default function OnboardingPage() {
         <div className="text-center space-y-4">
           <div className="w-16 h-16 border-4 border-[#6C63FF] border-t-transparent rounded-full animate-spin mx-auto" />
           <h2 className="text-xl font-semibold">{status}</h2>
-          <p className="text-gray-500 text-sm">
-            Please keep this tab open. Avatar training takes about 2 minutes.
-          </p>
+          <p className="text-gray-500 text-sm">Just a moment…</p>
         </div>
       )}
 

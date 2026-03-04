@@ -43,10 +43,12 @@ export async function GET(req: NextRequest) {
     metadata: JSON.stringify({ voice_id: voiceId, photo_url: photoUrl }),
   });
 
-  // Create participant token
+  // Create participant token — embed voice_id + photo_url in participant metadata
+  // (more reliable than room metadata which has timing issues)
   const token = new AccessToken(apiKey, apiSecret, {
     identity: participantName,
     ttl: "15m",
+    metadata: JSON.stringify({ voice_id: voiceId, photo_url: photoUrl }),
   });
   token.addGrant({
     room:           roomName,

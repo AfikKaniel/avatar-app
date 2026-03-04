@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 import os
@@ -7,6 +8,7 @@ from io import BytesIO
 from dotenv import load_dotenv
 from PIL import Image
 
+from livekit import rtc
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, WorkerType, cli
 from livekit.plugins import anthropic, elevenlabs, hedra, openai
 
@@ -20,13 +22,53 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env.loca
 async def entrypoint(ctx: JobContext):
     await ctx.connect()
 
-    # ── Read user config from LiveKit room metadata ──────────────────────────
-    metadata = json.loads(ctx.room.metadata or "{}")
-    voice_id  = metadata.get("voice_id")
-    photo_url = metadata.get("photo_url")
+    # ── Read user config from participant metadata ────────────────────────────
+    # The voice_id + photo_url are embedded in the user's participant token
+    # metadata (more reliable than room metadata which has timing issues).
+    voice_id = None
+    photo_url = None
+
+    # Check existing participants first
+    for participant in ctx.room.remote_participants.values():
+        if participant.metadata:
+            try:
+                meta = json.loads(participant.metadata)
+                voice_id = meta.get("voice_id")
+                photo_url = meta.get("photo_url")
+                if voice_id and photo_url:
+                    logger.info(f"Found metadata from existing participant {participant.identity}")
+                    break
+            except Exception:
+                pass
+
+    # If not found yet, wait up to 10 seconds for the user to join
+    if not voice_id or not photo_url:
+        logger.info("No participant with metadata yet — waiting for user to join…")
+        found = asyncio.Event()
+
+        @ctx.room.on("participant_connected")
+        def on_participant(participant: rtc.RemoteParticipant):
+            nonlocal voice_id, photo_url
+            if participant.metadata:
+                try:
+                    meta = json.loads(participant.metadata)
+                    v = meta.get("voice_id")
+                    p = meta.get("photo_url")
+                    if v and p:
+                        voice_id = v
+                        photo_url = p
+                        logger.info(f"Got metadata from participant {participant.identity}")
+                        found.set()
+                except Exception:
+                    pass
+
+        try:
+            await asyncio.wait_for(found.wait(), timeout=10.0)
+        except asyncio.TimeoutError:
+            logger.error("Timed out waiting for participant with voice_id/photo_url metadata")
 
     if not voice_id or not photo_url:
-        logger.error("Missing voice_id or photo_url in room metadata — did onboarding complete?")
+        logger.error("Missing voice_id or photo_url — did onboarding complete?")
         return
 
     logger.info(f"Starting avatar session: voice_id={voice_id}, photo_url={photo_url}")

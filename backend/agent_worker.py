@@ -10,7 +10,7 @@ from PIL import Image
 
 from livekit import rtc
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, WorkerType, cli
-from livekit.plugins import anthropic, elevenlabs, hedra, openai
+from livekit.plugins import anthropic, elevenlabs, hedra, openai, silero
 
 logger = logging.getLogger("hedra-avatar")
 logger.setLevel(logging.INFO)
@@ -79,6 +79,7 @@ async def entrypoint(ctx: JobContext):
 
     # ── Build the agent pipeline ─────────────────────────────────────────────
     session = AgentSession(
+        vad=silero.VAD.load(),
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
         tts=elevenlabs.TTS(

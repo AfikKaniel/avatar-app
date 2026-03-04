@@ -24,9 +24,14 @@ export async function POST(req: NextRequest) {
   }
 
   // Upload photo to Vercel Blob (public, so the Python agent can download it)
-  const blob = await put(`avatars/${Date.now()}.jpg`, photo, {
-    access: "public",
-  });
-
-  return NextResponse.json({ success: true, photoUrl: blob.url });
+  try {
+    const blob = await put(`avatars/${Date.now()}.jpg`, photo, {
+      access: "public",
+    });
+    return NextResponse.json({ success: true, photoUrl: blob.url });
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("Vercel Blob upload failed:", message);
+    return NextResponse.json({ error: `Blob upload failed: ${message}` }, { status: 500 });
+  }
 }

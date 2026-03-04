@@ -46,8 +46,9 @@ export default function OnboardingPage() {
         method: "POST",
         body: saveForm,
       });
-      if (!saveRes.ok) throw new Error("Avatar setup failed");
-      const { photoUrl } = await saveRes.json();
+      const saveData = await saveRes.json();
+      if (!saveRes.ok) throw new Error(saveData.error || "Avatar setup failed");
+      const { photoUrl } = saveData;
 
       // ── 3. Persist voice_id + photoUrl for the chat page ─────────────────
       localStorage.setItem("voiceId",  voiceId);

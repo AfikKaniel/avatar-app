@@ -1,9 +1,20 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useState } from "react";
 
 export default function Home() {
+  const [hasAvatar, setHasAvatar] = useState(false);
+
+  useEffect(() => {
+    const voiceId  = localStorage.getItem("voiceId");
+    const photoUrl = localStorage.getItem("photoUrl");
+    setHasAvatar(!!voiceId && !!photoUrl);
+  }, []);
+
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen gap-8 px-4 text-center">
-      <div className="space-y-4" style={{ marginTop: "-18vh" }}>
+    <main className="flex flex-col items-center justify-center min-h-screen gap-8 px-4 text-center" style={{ marginTop: "-18vh" }}>
+      <div className="space-y-4">
         <h1
           className="text-6xl font-black uppercase"
           style={{
@@ -29,16 +40,18 @@ export default function Home() {
           href="/onboarding"
           className="bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-8 rounded-xl transition"
         >
-          Create My Avatar
+          {hasAvatar ? "Recreate My Avatar" : "Create My Avatar"}
         </Link>
-        <Link
-          href="/chat"
-          className="border border-gray-600 hover:border-gray-400 text-gray-300 font-semibold py-3 px-8 rounded-xl transition"
-        >
-          Talk to My Avatar
-        </Link>
-      </div>
 
+        {hasAvatar && (
+          <Link
+            href="/chat"
+            className="border border-gray-600 hover:border-gray-400 text-gray-300 font-semibold py-3 px-8 rounded-xl transition"
+          >
+            Talk to My Avatar
+          </Link>
+        )}
+      </div>
     </main>
   );
 }

@@ -36,19 +36,27 @@ export default function Home() {
       </div>
 
       <div className="flex flex-col gap-3 w-full max-w-xs">
-        <Link
-          href="/onboarding"
-          className="bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-8 rounded-xl transition"
-        >
-          {hasAvatar ? "Recreate My Avatar" : "Create My Avatar"}
-        </Link>
-
-        {hasAvatar && (
+        {hasAvatar ? (
+          <>
+            <Link
+              href="/chat"
+              className="bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-8 rounded-xl transition"
+            >
+              Talk to My Avatar
+            </Link>
+            <Link
+              href="/onboarding"
+              className="border border-gray-600 hover:border-gray-400 text-gray-300 font-semibold py-3 px-8 rounded-xl transition"
+            >
+              Recreate My Avatar
+            </Link>
+          </>
+        ) : (
           <Link
-            href="/chat"
-            className="border border-gray-600 hover:border-gray-400 text-gray-300 font-semibold py-3 px-8 rounded-xl transition"
+            href="/onboarding"
+            className="bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-8 rounded-xl transition"
           >
-            Talk to My Avatar
+            Create My Avatar
           </Link>
         )}
       </div>

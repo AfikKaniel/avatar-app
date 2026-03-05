@@ -39,9 +39,6 @@ export default function Home() {
         </Link>
       </div>
 
-      <p className="text-xs text-gray-600 max-w-sm">
-        Powered by Hedra · ElevenLabs · Claude
-      </p>
     </main>
   );
 }

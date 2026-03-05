@@ -9,8 +9,17 @@ interface Props {
 export default function PhotoCapture({ onCapture }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [streaming, setStreaming] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
+
+  function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    setPreview(url);
+    onCapture(file);
+  }
 
   // Start the webcam
   async function startCamera() {
@@ -49,7 +58,8 @@ export default function PhotoCapture({ onCapture }: Props) {
 
   function retake() {
     setPreview(null);
-    startCamera();
+    setStreaming(false);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   return (
@@ -86,6 +96,13 @@ export default function PhotoCapture({ onCapture }: Props) {
       )}
 
       <canvas ref={canvasRef} className="hidden" />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileUpload}
+      />
 
       {streaming && !preview && (
         <button
@@ -96,12 +113,21 @@ export default function PhotoCapture({ onCapture }: Props) {
         </button>
       )}
 
+      {!preview && (
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          className="w-full border border-gray-600 hover:border-gray-400 text-gray-300 font-semibold py-3 rounded-xl transition text-sm"
+        >
+          Upload Photo Instead
+        </button>
+      )}
+
       {preview && (
         <button
           onClick={retake}
           className="w-full border border-gray-600 hover:border-gray-400 text-gray-300 font-semibold py-2 rounded-xl transition text-sm"
         >
-          Retake
+          Retake / Choose Different
         </button>
       )}
     </div>

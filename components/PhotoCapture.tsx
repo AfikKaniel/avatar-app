@@ -40,7 +40,12 @@ export default function PhotoCapture({ onCapture }: Props) {
 
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    canvas.getContext("2d")?.drawImage(video, 0, 0);
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(video, 0, 0);
+    }
 
     canvas.toBlob(
       (blob) => {
@@ -73,6 +78,7 @@ export default function PhotoCapture({ onCapture }: Props) {
             playsInline
             muted
             className="w-full h-full object-cover"
+            style={{ transform: "scaleX(-1)" }}
           />
           {!streaming && (
             <div className="absolute inset-0 flex items-center justify-center">

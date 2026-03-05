@@ -3,8 +3,13 @@ import Link from "next/link";
 export default function Home() {
   return (
     <main className="flex flex-col items-center justify-center min-h-screen gap-8 px-4 text-center">
-      <div className="space-y-3">
-        <h1 className="text-5xl font-bold tracking-tight">Meet Your Avatar</h1>
+      <div className="space-y-4">
+        <h1
+          className="text-6xl font-black tracking-widest uppercase bg-gradient-to-r from-[#6C63FF] via-[#a78bfa] to-[#6C63FF] bg-clip-text text-transparent"
+          style={{ fontFamily: "'Inter', 'SF Pro Display', system-ui, sans-serif", letterSpacing: "0.18em" }}
+        >
+          GAGING.AI
+        </h1>
         <p className="text-gray-400 text-lg max-w-md">
           Take a photo, record your voice, and get a personal AI avatar that
           looks and sounds exactly like you.

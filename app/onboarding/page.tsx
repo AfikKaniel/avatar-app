@@ -87,10 +87,10 @@ export default function OnboardingPage() {
       {/* ── Step 1: Photo ── */}
       {step === "photo" && (
         <div className="w-full max-w-md space-y-4 text-center">
-          <h2 className="text-2xl font-bold">Take Your Photo</h2>
+          <h2 className="text-2xl font-bold">Your Avatar Face</h2>
           <p className="text-gray-400 text-sm">
-            Look straight at the camera with good lighting. This becomes your
-            avatar face.
+            Take a picture or upload one so your avatar looks exactly like you!
+            Make sure your face is clearly visible with good lighting.
           </p>
           <PhotoCapture onCapture={handlePhotoReady} />
         </div>
@@ -99,22 +99,31 @@ export default function OnboardingPage() {
       {/* ── Step 2: Voice ── */}
       {step === "voice" && (
         <div className="w-full max-w-md space-y-4 text-center">
-          <h2 className="text-2xl font-bold">Record Your Voice</h2>
+          <h2 className="text-2xl font-bold">Teach Your Avatar Your Voice</h2>
           <p className="text-gray-400 text-sm">
-            Read the text below naturally. Aim for at least{" "}
-            <span className="text-[#6C63FF] font-semibold">60 seconds</span>.
-            Speak clearly in a quiet room.
+            Your avatar wants to sound exactly like you! Speak freely for{" "}
+            <span className="text-[#6C63FF] font-semibold">60 seconds</span>{" "}
+            so it can learn your voice. Here are some topics to talk about —
+            pick any that feel natural:
           </p>
-          <div className="bg-gray-800 rounded-xl p-4 text-left text-sm text-gray-300 leading-relaxed">
-            <p>
-              "Hello! My name is… and I live in… I enjoy spending my time on
-              things like… One thing most people don't know about me is… If I
-              could travel anywhere in the world right now, I'd go to… because…
-              The best piece of advice I've ever received was… I think the most
-              important quality in a person is… In the next few years, I hope
-              to… My favorite thing about technology is… and the thing I find
-              most exciting about AI is…"
-            </p>
+          <div className="bg-gray-800 rounded-xl p-4 text-left text-sm text-gray-300 space-y-2">
+            {[
+              "My name, where I'm from, and a little about my life",
+              "My hobbies and what I love to do in my free time",
+              "My occupation and what my day-to-day looks like",
+              "What I'm most passionate about right now",
+              "Where in the world I'd travel if I could go anywhere",
+              "My expectations and vision for my AI avatar",
+              "The people, places, or things that inspire me most",
+              "A goal or dream I'm working towards",
+              "My favorite movies, music, books, or shows",
+              "Something most people don't know about me",
+            ].map((topic, i) => (
+              <div key={i} className="flex items-start gap-2">
+                <span className="text-[#6C63FF] font-bold mt-0.5">·</span>
+                <span>{topic}</span>
+              </div>
+            ))}
           </div>
           <VoiceRecorder onRecordingComplete={setVoiceBlob} />
           {voiceBlob && (

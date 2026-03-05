@@ -105,7 +105,7 @@ export default function ChatPage() {
   }, []);
 
   return (
-    <main className="flex flex-col h-screen max-w-2xl mx-auto px-4 py-6 gap-4">
+    <main className="flex flex-col h-screen max-w-2xl mx-auto px-4 py-4 gap-3">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">Your Avatar</h1>
         {state !== "idle" && (
@@ -119,7 +119,7 @@ export default function ChatPage() {
       </div>
 
       {/* ── Avatar Video ── */}
-      <div className="relative bg-gray-900 rounded-2xl overflow-hidden flex-1 flex items-center justify-center">
+      <div className="relative bg-gray-900 rounded-2xl overflow-hidden flex-1 flex items-center justify-center" style={{ maxHeight: "75vh" }}>
         <video
           ref={videoRef}
           autoPlay

@@ -6,43 +6,37 @@ interface Props {
   onRecordingComplete: (blob: Blob | null) => void;
 }
 
-type State = "idle" | "recording" | "paused" | "done";
+type State = "idle" | "recording" | "paused";
 
 export default function VoiceRecorder({ onRecordingComplete }: Props) {
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef   = useRef<Blob[]>([]);
-  const streamRef   = useRef<MediaStream | null>(null);
-  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recorderRef  = useRef<MediaRecorder | null>(null);
+  const chunksRef    = useRef<Blob[]>([]);
+  const streamRef    = useRef<MediaStream | null>(null);
+  const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const discardRef   = useRef(false); // when true, onstop will NOT call onRecordingComplete
   const [state, setState]     = useState<State>("idle");
   const [seconds, setSeconds] = useState(0);
 
   function startTimer() {
     timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
   }
-
   function stopTimer() {
     if (timerRef.current) clearInterval(timerRef.current);
   }
 
-  function cleanup() {
-    stopTimer();
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    recorderRef.current = null;
-    streamRef.current = null;
-    chunksRef.current = [];
-  }
-
   async function startRecording() {
-    onRecordingComplete(null); // clear any previous blob in the parent
+    onRecordingComplete(null); // clear parent blob immediately
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
     chunksRef.current = [];
+    discardRef.current = false;
 
     const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunksRef.current.push(e.data);
+    };
     recorder.onstop = () => {
-      // Only pass blob upstream if we have enough audio (>=60s)
-      if (chunksRef.current.length > 0) {
+      if (!discardRef.current && chunksRef.current.length > 0) {
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         onRecordingComplete(blob);
       }
@@ -68,11 +62,14 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
     setState("recording");
   }
 
-  // Stop always ends the session and resets to Start Recording
   function stopRecording() {
     stopTimer();
-    onRecordingComplete(null); // always clear parent's blob immediately on stop
-    if (seconds < 60) chunksRef.current = []; // discard audio if not enough
+    // If < 60s: mark as discard so onstop won't call onRecordingComplete,
+    // and immediately clear parent's blob
+    if (seconds < 60) {
+      discardRef.current = true;
+      onRecordingComplete(null);
+    }
     recorderRef.current?.stop();
     setSeconds(0);
     setState("idle");
@@ -86,7 +83,6 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
 
   return (
     <div className="space-y-2">
-      {/* Timer */}
       <div className={`text-3xl font-mono font-bold text-center transition-colors ${
         seconds >= 60 ? "text-green-400" : state === "paused" ? "text-yellow-400" : "text-gray-400"
       }`}>
@@ -104,13 +100,7 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
           Great! Stop when ready, or keep going for better quality.
         </p>
       )}
-      {state === "done" && (
-        <p className="text-xs text-green-500 text-center">
-          Recording saved — tap "Create My Avatar" below.
-        </p>
-      )}
 
-      {/* Controls */}
       {state === "idle" && (
         <button
           onClick={startRecording}

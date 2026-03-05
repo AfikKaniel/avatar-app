@@ -62,7 +62,7 @@ export default function OnboardingPage() {
   }
 
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen px-4 py-12 gap-8">
+    <main className="flex flex-col items-center justify-center min-h-screen px-4 py-4 gap-4">
       {/* Progress indicators */}
       <div className="flex gap-2 items-center">
         {(["photo", "voice", "processing"] as const).map((s, i) => (
@@ -98,15 +98,14 @@ export default function OnboardingPage() {
 
       {/* ── Step 2: Voice ── */}
       {step === "voice" && (
-        <div className="w-full max-w-md space-y-4 text-center">
-          <h2 className="text-2xl font-bold">Teach Your Avatar Your Voice</h2>
-          <p className="text-gray-400 text-sm">
-            Your avatar wants to sound exactly like you! Speak freely for{" "}
+        <div className="w-full max-w-md space-y-3 text-center">
+          <h2 className="text-xl font-bold">Teach Your Avatar Your Voice</h2>
+          <p className="text-gray-400 text-xs">
+            Speak freely for{" "}
             <span className="text-[#6C63FF] font-semibold">60 seconds</span>{" "}
-            so it can learn your voice. Here are some topics to talk about —
-            pick any that feel natural:
+            so your avatar learns your voice. Pick any topics below:
           </p>
-          <div className="bg-gray-800 rounded-xl p-4 text-left text-sm text-gray-300 space-y-2">
+          <div className="bg-gray-800 rounded-xl p-3 text-left text-xs text-gray-300 space-y-1.5 max-h-44 overflow-y-auto">
             {[
               "My name, where I'm from, and a little about my life",
               "My hobbies and what I love to do in my free time",

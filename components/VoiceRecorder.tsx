@@ -9,11 +9,11 @@ interface Props {
 type State = "idle" | "recording" | "paused" | "done";
 
 export default function VoiceRecorder({ onRecordingComplete }: Props) {
-  const recorderRef   = useRef<MediaRecorder | null>(null);
-  const chunksRef     = useRef<Blob[]>([]);
-  const streamRef     = useRef<MediaStream | null>(null);
-  const timerRef      = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [state, setState]   = useState<State>("idle");
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef   = useRef<Blob[]>([]);
+  const streamRef   = useRef<MediaStream | null>(null);
+  const timerRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [state, setState]     = useState<State>("idle");
   const [seconds, setSeconds] = useState(0);
 
   function startTimer() {
@@ -24,6 +24,14 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
     if (timerRef.current) clearInterval(timerRef.current);
   }
 
+  function cleanup() {
+    stopTimer();
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    recorderRef.current = null;
+    streamRef.current = null;
+    chunksRef.current = [];
+  }
+
   async function startRecording() {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
@@ -32,8 +40,11 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
     const recorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
     recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
     recorder.onstop = () => {
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" });
-      onRecordingComplete(blob);
+      // Only pass blob upstream if we have enough audio (>=60s)
+      if (chunksRef.current.length > 0) {
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        onRecordingComplete(blob);
+      }
       stream.getTracks().forEach((t) => t.stop());
     };
 
@@ -56,28 +67,14 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
     setState("recording");
   }
 
+  // Stop always ends the session and resets to Start Recording
   function stopRecording() {
-    if (seconds < 60) {
-      // Not enough audio yet — treat Stop as Pause and prompt the user to resume
-      recorderRef.current?.pause();
-      stopTimer();
-      setState("paused");
-    } else {
-      stopTimer();
-      recorderRef.current?.stop();
-      setState("done");
-    }
-  }
-
-  function restartRecording() {
     stopTimer();
+    // Discard chunks so onstop doesn't call onRecordingComplete if < 60s
+    if (seconds < 60) chunksRef.current = [];
     recorderRef.current?.stop();
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    chunksRef.current = [];
     setSeconds(0);
     setState("idle");
-    // small delay so onstop fires cleanly before we re-init
-    setTimeout(startRecording, 150);
   }
 
   function formatTime(s: number) {
@@ -87,13 +84,13 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
   const isActive = state === "recording" || state === "paused";
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {/* Timer */}
-      <div className={`text-4xl font-mono font-bold text-center transition-colors ${
+      <div className={`text-3xl font-mono font-bold text-center transition-colors ${
         seconds >= 60 ? "text-green-400" : state === "paused" ? "text-yellow-400" : "text-gray-400"
       }`}>
         {formatTime(seconds)}
-        {state === "paused" && <span className="text-sm font-sans ml-2 text-yellow-400">paused</span>}
+        {state === "paused" && <span className="text-xs font-sans ml-2 text-yellow-400">paused</span>}
       </div>
 
       {isActive && seconds < 60 && (
@@ -103,12 +100,12 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
       )}
       {isActive && seconds >= 60 && (
         <p className="text-xs text-green-500 text-center">
-          Great! Stop when you're ready, or keep going for even better quality.
+          Great! Stop when ready, or keep going for better quality.
         </p>
       )}
       {state === "done" && (
         <p className="text-xs text-green-500 text-center">
-          Recording saved — tap "Create My Avatar" below when ready.
+          Recording saved — tap "Create My Avatar" below.
         </p>
       )}
 
@@ -141,39 +138,21 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
       )}
 
       {state === "paused" && (
-        <div className="space-y-2">
-          {seconds < 60 && (
-            <p className="text-xs text-red-400 text-center">
-              You need at least 60 seconds — please resume and keep talking.
-            </p>
-          )}
-          <div className="flex gap-2">
-            <button
-              onClick={resumeRecording}
-              className="flex-1 bg-red-600 hover:bg-red-500 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2"
-            >
-              <span className="w-3 h-3 rounded-full bg-white animate-pulse" />
-              Resume
-            </button>
-            {seconds >= 60 && (
-              <button
-                onClick={stopRecording}
-                className="flex-1 border border-red-600 text-red-400 hover:bg-red-900/20 font-semibold py-3 rounded-xl transition"
-              >
-                Stop
-              </button>
-            )}
-          </div>
+        <div className="flex gap-2">
+          <button
+            onClick={resumeRecording}
+            className="flex-1 bg-red-600 hover:bg-red-500 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2"
+          >
+            <span className="w-3 h-3 rounded-full bg-white animate-pulse" />
+            Resume
+          </button>
+          <button
+            onClick={stopRecording}
+            className="flex-1 border border-gray-600 text-gray-400 hover:bg-gray-800 font-semibold py-3 rounded-xl transition"
+          >
+            Stop
+          </button>
         </div>
-      )}
-
-      {state === "done" && (
-        <button
-          onClick={restartRecording}
-          className="w-full border border-gray-600 hover:border-gray-400 text-gray-300 font-semibold py-2 rounded-xl transition text-sm"
-        >
-          Re-record
-        </button>
       )}
     </div>
   );

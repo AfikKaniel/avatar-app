@@ -5,8 +5,8 @@ export default function Home() {
     <main className="flex flex-col items-center justify-center min-h-screen gap-8 px-4 text-center">
       <div className="space-y-4">
         <h1
-          className="text-6xl font-black tracking-widest uppercase bg-gradient-to-r from-[#6C63FF] via-[#a78bfa] to-[#6C63FF] bg-clip-text text-transparent"
-          style={{ fontFamily: "'Inter', 'SF Pro Display', system-ui, sans-serif", letterSpacing: "0.18em" }}
+          className="text-4xl font-black uppercase bg-gradient-to-r from-[#6C63FF] via-[#a78bfa] to-[#6C63FF] bg-clip-text text-transparent"
+          style={{ fontFamily: "'Inter', 'SF Pro Display', system-ui, sans-serif", letterSpacing: "0.12em" }}
         >
           GAGING.AI
         </h1>

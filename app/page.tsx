@@ -2,11 +2,19 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <main className="flex flex-col items-center justify-center min-h-screen gap-8 px-4 text-center" style={{ paddingTop: "0", marginTop: "-10vh" }}>
-      <div className="space-y-4">
+    <main className="flex flex-col items-center justify-center min-h-screen gap-8 px-4 text-center">
+      <div className="space-y-4" style={{ marginTop: "-18vh" }}>
         <h1
-          className="text-5xl font-black uppercase bg-gradient-to-r from-[#6C63FF] via-[#a78bfa] to-[#6C63FF] bg-clip-text text-transparent"
-          style={{ fontFamily: "'Inter', 'SF Pro Display', system-ui, sans-serif", letterSpacing: "0.08em" }}
+          className="text-6xl font-black uppercase"
+          style={{
+            fontFamily: "'SF Pro Display', 'Inter', system-ui, sans-serif",
+            letterSpacing: "0.06em",
+            background: "linear-gradient(135deg, #00f0ff 0%, #7b5fff 45%, #ff3cac 100%)",
+            WebkitBackgroundClip: "text",
+            WebkitTextFillColor: "transparent",
+            backgroundClip: "text",
+            filter: "drop-shadow(0 0 18px rgba(123,95,255,0.45))",
+          }}
         >
           GAGING.AI
         </h1>

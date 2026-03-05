@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 
 interface Props {
-  onRecordingComplete: (blob: Blob) => void;
+  onRecordingComplete: (blob: Blob | null) => void;
 }
 
 type State = "idle" | "recording" | "paused" | "done";
@@ -33,6 +33,7 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
   }
 
   async function startRecording() {
+    onRecordingComplete(null); // clear any previous blob in the parent
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
     chunksRef.current = [];

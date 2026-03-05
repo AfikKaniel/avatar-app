@@ -71,8 +71,8 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
   // Stop always ends the session and resets to Start Recording
   function stopRecording() {
     stopTimer();
-    // Discard chunks so onstop doesn't call onRecordingComplete if < 60s
-    if (seconds < 60) chunksRef.current = [];
+    onRecordingComplete(null); // always clear parent's blob immediately on stop
+    if (seconds < 60) chunksRef.current = []; // discard audio if not enough
     recorderRef.current?.stop();
     setSeconds(0);
     setState("idle");

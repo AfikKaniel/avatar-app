@@ -57,9 +57,16 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
   }
 
   function stopRecording() {
-    stopTimer();
-    recorderRef.current?.stop();
-    setState("done");
+    if (seconds < 60) {
+      // Not enough audio yet — treat Stop as Pause and prompt the user to resume
+      recorderRef.current?.pause();
+      stopTimer();
+      setState("paused");
+    } else {
+      stopTimer();
+      recorderRef.current?.stop();
+      setState("done");
+    }
   }
 
   function restartRecording() {
@@ -134,20 +141,29 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
       )}
 
       {state === "paused" && (
-        <div className="flex gap-2">
-          <button
-            onClick={resumeRecording}
-            className="flex-1 bg-red-600 hover:bg-red-500 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2"
-          >
-            <span className="w-3 h-3 rounded-full bg-white animate-pulse" />
-            Resume
-          </button>
-          <button
-            onClick={stopRecording}
-            className="flex-1 border border-red-600 text-red-400 hover:bg-red-900/20 font-semibold py-3 rounded-xl transition"
-          >
-            Stop
-          </button>
+        <div className="space-y-2">
+          {seconds < 60 && (
+            <p className="text-xs text-red-400 text-center">
+              You need at least 60 seconds — please resume and keep talking.
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button
+              onClick={resumeRecording}
+              className="flex-1 bg-red-600 hover:bg-red-500 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2"
+            >
+              <span className="w-3 h-3 rounded-full bg-white animate-pulse" />
+              Resume
+            </button>
+            {seconds >= 60 && (
+              <button
+                onClick={stopRecording}
+                className="flex-1 border border-red-600 text-red-400 hover:bg-red-900/20 font-semibold py-3 rounded-xl transition"
+              >
+                Stop
+              </button>
+            )}
+          </div>
         </div>
       )}
 

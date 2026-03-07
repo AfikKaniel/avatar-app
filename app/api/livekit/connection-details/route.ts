@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
 
 /**
- * GET /api/livekit/connection-details?voiceId=xxx&photoUrl=xxx
+ * GET /api/livekit/connection-details
  *
- * Creates a LiveKit room with user metadata (voice_id + photo_url) embedded,
- * so the Python agent can pick them up and start the correct avatar session.
- *
- * Returns: { serverUrl, roomName, participantToken }
+ * Query params:
+ *   mode         - "digital_twin" | "therapist"
+ *   voiceId      - required when mode=digital_twin
+ *   photoUrl     - required when mode=digital_twin
  */
 export async function GET(req: NextRequest) {
   const apiKey    = process.env.LIVEKIT_API_KEY;
@@ -22,12 +22,13 @@ export async function GET(req: NextRequest) {
   }
 
   const { searchParams } = new URL(req.url);
+  const mode     = searchParams.get("mode") ?? "digital_twin";
   const voiceId  = searchParams.get("voiceId");
   const photoUrl = searchParams.get("photoUrl");
 
-  if (!voiceId || !photoUrl) {
+  if (mode === "digital_twin" && (!voiceId || !photoUrl)) {
     return NextResponse.json(
-      { error: "voiceId and photoUrl are required" },
+      { error: "voiceId and photoUrl are required for digital_twin mode" },
       { status: 400 }
     );
   }
@@ -36,19 +37,22 @@ export async function GET(req: NextRequest) {
   const participantName = `user-${crypto.randomUUID().slice(0, 8)}`;
   const httpUrl         = wsUrl.replace("wss://", "https://").replace("ws://", "http://");
 
-  // Create the room with metadata so the Python agent knows which voice + photo to use
   const roomService = new RoomServiceClient(httpUrl, apiKey, apiSecret);
   await roomService.createRoom({
     name:     roomName,
-    metadata: JSON.stringify({ voice_id: voiceId, photo_url: photoUrl }),
+    metadata: JSON.stringify({ mode, voice_id: voiceId, photo_url: photoUrl }),
   });
 
-  // Create participant token — embed voice_id + photo_url in participant metadata
-  // (more reliable than room metadata which has timing issues)
+  const participantMeta: Record<string, string | null> = { mode };
+  if (mode === "digital_twin") {
+    participantMeta.voice_id  = voiceId;
+    participantMeta.photo_url = photoUrl;
+  }
+
   const token = new AccessToken(apiKey, apiSecret, {
     identity: participantName,
     ttl: "15m",
-    metadata: JSON.stringify({ voice_id: voiceId, photo_url: photoUrl }),
+    metadata: JSON.stringify(participantMeta),
   });
   token.addGrant({
     room:           roomName,

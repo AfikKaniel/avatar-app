@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Room,
   RoomEvent,
@@ -11,39 +12,49 @@ import {
 } from "livekit-client";
 
 type SessionState = "idle" | "connecting" | "ready" | "error";
+type Mode = "digital_twin" | "therapist";
 
-export default function ChatPage() {
-  const videoRef  = useRef<HTMLVideoElement>(null);
-  const roomRef   = useRef<Room | null>(null);
-  const [state, setState]       = useState<SessionState>("idle");
+function ChatPageInner() {
+  const searchParams = useSearchParams();
+  const mode = (searchParams.get("mode") ?? "digital_twin") as Mode;
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const roomRef  = useRef<Room | null>(null);
+  const [state, setState]     = useState<SessionState>("idle");
   const [errorMsg, setErrorMsg] = useState("");
-  const [micOn, setMicOn]       = useState(true);
+  const [micOn, setMicOn]     = useState(true);
 
-  // ── Start the LiveKit session ─────────────────────────────────────────────
+  const label = mode === "therapist" ? "Your Therapist" : "Your Digital Twin";
+  const startLabel = mode === "therapist" ? "Start Session" : "Start Talking";
+  const connectingLabel = mode === "therapist" ? "Connecting to your therapist…" : "Waking up your avatar…";
+
   async function startSession() {
-    const voiceId  = typeof window !== "undefined" ? localStorage.getItem("voiceId")  : null;
-    const photoUrl = typeof window !== "undefined" ? localStorage.getItem("photoUrl") : null;
-
-    if (!voiceId || !photoUrl) {
-      setErrorMsg("No avatar found. Please complete onboarding first.");
-      setState("error");
-      return;
-    }
-
     setState("connecting");
 
     try {
-      // 1. Get a LiveKit room token from our backend
-      const params = new URLSearchParams({ voiceId, photoUrl });
+      let params: URLSearchParams;
+
+      if (mode === "therapist") {
+        params = new URLSearchParams({ mode: "therapist" });
+      } else {
+        const voiceId  = localStorage.getItem("voiceId");
+        const photoUrl = localStorage.getItem("photoUrl");
+
+        if (!voiceId || !photoUrl) {
+          setErrorMsg("No avatar found. Please complete onboarding first.");
+          setState("error");
+          return;
+        }
+        params = new URLSearchParams({ mode: "digital_twin", voiceId, photoUrl });
+      }
+
       const res = await fetch(`/api/livekit/connection-details?${params}`);
       if (!res.ok) throw new Error("Could not get connection details");
       const { serverUrl, participantToken } = await res.json();
 
-      // 2. Create and connect the LiveKit room
       const room = new Room();
       roomRef.current = room;
 
-      // 3. Wire avatar video track when the agent publishes it
       room.on(
         RoomEvent.TrackSubscribed,
         (
@@ -54,7 +65,6 @@ export default function ChatPage() {
           if (track.kind === Track.Kind.Video && videoRef.current) {
             track.attach(videoRef.current);
           }
-          // Audio is attached automatically by LiveKit
           if (track.kind === Track.Kind.Audio) {
             const audioEl = track.attach() as HTMLAudioElement;
             audioEl.play().catch(() => {});
@@ -79,7 +89,6 @@ export default function ChatPage() {
     }
   }
 
-  // ── Toggle microphone ─────────────────────────────────────────────────────
   async function toggleMic() {
     if (!roomRef.current) return;
     const next = !micOn;
@@ -87,9 +96,7 @@ export default function ChatPage() {
     setMicOn(next);
   }
 
-  // ── End session ───────────────────────────────────────────────────────────
   async function endSession() {
-    // Detach any lingering audio elements
     document.querySelectorAll("audio[data-lk-audio]").forEach((el) => el.remove());
     if (videoRef.current) videoRef.current.srcObject = null;
     await roomRef.current?.disconnect();
@@ -97,7 +104,6 @@ export default function ChatPage() {
     setState("idle");
   }
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       roomRef.current?.disconnect();
@@ -107,7 +113,7 @@ export default function ChatPage() {
   return (
     <main className="flex flex-col h-screen max-w-2xl mx-auto px-4 py-4 gap-3">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Your Avatar</h1>
+        <h1 className="text-xl font-bold">{label}</h1>
         {state !== "idle" && (
           <button
             onClick={endSession}
@@ -118,8 +124,10 @@ export default function ChatPage() {
         )}
       </div>
 
-      {/* ── Avatar Video ── */}
-      <div className="relative bg-gray-900 rounded-2xl overflow-hidden flex-1 flex items-center justify-center" style={{ maxHeight: "75vh" }}>
+      <div
+        className="relative bg-gray-900 rounded-2xl overflow-hidden flex-1 flex items-center justify-center"
+        style={{ maxHeight: "75vh" }}
+      >
         <video
           ref={videoRef}
           autoPlay
@@ -130,12 +138,16 @@ export default function ChatPage() {
 
         {state === "idle" && (
           <div className="flex flex-col items-center gap-4">
-            <p className="text-gray-400">Your avatar is waiting</p>
+            <p className="text-gray-400">
+              {mode === "therapist"
+                ? "Your therapist is ready to listen"
+                : "Your avatar is waiting"}
+            </p>
             <button
               onClick={startSession}
               className="bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-8 rounded-xl transition"
             >
-              Start Talking
+              {startLabel}
             </button>
           </div>
         )}
@@ -143,7 +155,7 @@ export default function ChatPage() {
         {state === "connecting" && (
           <div className="flex flex-col items-center gap-3">
             <div className="w-10 h-10 border-4 border-[#6C63FF] border-t-transparent rounded-full animate-spin" />
-            <p className="text-gray-400 text-sm">Waking up your avatar…</p>
+            <p className="text-gray-400 text-sm">{connectingLabel}</p>
           </div>
         )}
 
@@ -158,7 +170,6 @@ export default function ChatPage() {
           </div>
         )}
 
-        {/* Mic status indicator */}
         {state === "ready" && (
           <div className="absolute bottom-3 left-3 flex items-center gap-2 bg-black/60 rounded-full px-3 py-1">
             <span
@@ -167,13 +178,12 @@ export default function ChatPage() {
               }`}
             />
             <span className="text-xs text-white">
-              {micOn ? "Mic on — speak to your avatar" : "Mic off"}
+              {micOn ? "Mic on — speak freely" : "Mic off"}
             </span>
           </div>
         )}
       </div>
 
-      {/* ── Controls ── */}
       {state === "ready" && (
         <div className="flex justify-center gap-3">
           <button
@@ -184,7 +194,7 @@ export default function ChatPage() {
                 : "border-red-500 text-red-400 hover:border-red-400"
             }`}
           >
-            {micOn ? "🎤 Mute" : "🎤 Unmute"}
+            {micOn ? "Mute" : "Unmute"}
           </button>
           <button
             onClick={endSession}
@@ -195,5 +205,13 @@ export default function ChatPage() {
         </div>
       )}
     </main>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense>
+      <ChatPageInner />
+    </Suspense>
   );
 }

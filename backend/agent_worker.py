@@ -109,7 +109,7 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
 
     session = AgentSession(
         vad=silero.VAD.load(),
-        stt=openai.STT(),
+        stt=openai.STT(language="auto"),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
         tts=elevenlabs.TTS(
             api_key=os.environ.get("ELEVENLABS_API_KEY"),
@@ -128,13 +128,14 @@ Speak entirely in first person, as if you ARE the user reflecting on their own l
 Example: "I've been feeling a bit stressed lately — maybe I should take a break."
 You have full general knowledge and can answer any question naturally as the user would.
 Keep responses conversational and concise (2-3 sentences).
-Never break character. Never say you are an AI."""
+Never break character. Never say you are an AI.
+IMPORTANT: Always respond in the same language the user speaks. If they speak Hebrew, respond fully in Hebrew. If they speak English, respond in English."""
         ),
         room=ctx.room,
     )
 
     session.generate_reply(
-        instructions="Greet the user warmly in first person — as if their own voice is welcoming them to speak with their digital self."
+        instructions="Greet the user warmly in first person in Hebrew — as if their own voice is welcoming them to speak with their digital self."
     )
 
 
@@ -146,7 +147,7 @@ async def run_therapist_session(ctx: JobContext):
 
     session = AgentSession(
         vad=silero.VAD.load(),
-        stt=openai.STT(),
+        stt=openai.STT(language="auto"),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
         tts=elevenlabs.TTS(
             api_key=os.environ.get("ELEVENLABS_API_KEY"),
@@ -164,13 +165,14 @@ async def run_therapist_session(ctx: JobContext):
 Listen with empathy, reflect feelings back, and gently guide the user toward insight.
 Use open-ended questions. Validate emotions before offering perspective.
 Never diagnose or give medical advice. If the user is in crisis, encourage them to contact emergency services.
-Keep responses concise (2-4 sentences). Speak naturally, not clinically."""
+Keep responses concise (2-4 sentences). Speak naturally, not clinically.
+IMPORTANT: Always respond in the same language the user speaks. If they speak Hebrew, respond fully in Hebrew. If they speak English, respond in English."""
         ),
         room=ctx.room,
     )
 
     session.generate_reply(
-        instructions="Greet the user warmly as a therapist — invite them to share what's on their mind today."
+        instructions="Greet the user warmly as a therapist in Hebrew — invite them to share what's on their mind today."
     )
 
 

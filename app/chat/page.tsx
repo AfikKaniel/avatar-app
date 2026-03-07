@@ -25,7 +25,6 @@ function ChatPageInner() {
   const [micOn, setMicOn]     = useState(true);
 
   const label = mode === "therapist" ? "Your Therapist" : "Your Digital Twin";
-  const startLabel = mode === "therapist" ? "Start Session" : "Start Talking";
   const connectingLabel = mode === "therapist" ? "Connecting to your therapist…" : "Waking up your avatar…";
 
   async function startSession() {
@@ -105,9 +104,11 @@ function ChatPageInner() {
   }
 
   useEffect(() => {
+    startSession();
     return () => {
       roomRef.current?.disconnect();
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -136,23 +137,7 @@ function ChatPageInner() {
           style={{ display: state === "ready" ? "block" : "none" }}
         />
 
-        {state === "idle" && (
-          <div className="flex flex-col items-center gap-4">
-            <p className="text-gray-400">
-              {mode === "therapist"
-                ? "Your therapist is ready to listen"
-                : "Your avatar is waiting"}
-            </p>
-            <button
-              onClick={startSession}
-              className="bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-8 rounded-xl transition"
-            >
-              {startLabel}
-            </button>
-          </div>
-        )}
-
-        {state === "connecting" && (
+        {(state === "idle" || state === "connecting") && (
           <div className="flex flex-col items-center gap-3">
             <div className="w-10 h-10 border-4 border-[#6C63FF] border-t-transparent rounded-full animate-spin" />
             <p className="text-gray-400 text-sm">{connectingLabel}</p>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   Room,
   RoomEvent,
@@ -16,13 +16,14 @@ type Mode = "digital_twin" | "therapist";
 
 function ChatPageInner() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const mode = (searchParams.get("mode") ?? "digital_twin") as Mode;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const roomRef  = useRef<Room | null>(null);
-  const [state, setState]     = useState<SessionState>("idle");
+  const [state, setState]       = useState<SessionState>("idle");
   const [errorMsg, setErrorMsg] = useState("");
-  const [micOn, setMicOn]     = useState(true);
+  const [micOn, setMicOn]       = useState(true);
 
   const label = mode === "therapist" ? "Your Therapist" : "Your Digital Twin";
   const connectingLabel = mode === "therapist" ? "Connecting to your therapist…" : "Waking up your avatar…";
@@ -76,7 +77,10 @@ function ChatPageInner() {
         track.detach();
       });
 
-      room.on(RoomEvent.Disconnected, () => setState("idle"));
+      room.on(RoomEvent.Disconnected, () => {
+        roomRef.current = null;
+        router.push("/");
+      });
 
       await room.connect(serverUrl, participantToken, { autoSubscribe: true });
       await room.localParticipant.setMicrophoneEnabled(true);
@@ -96,11 +100,11 @@ function ChatPageInner() {
   }
 
   async function endSession() {
-    document.querySelectorAll("audio[data-lk-audio]").forEach((el) => el.remove());
+    document.querySelectorAll("audio").forEach((el) => el.remove());
     if (videoRef.current) videoRef.current.srcObject = null;
     await roomRef.current?.disconnect();
     roomRef.current = null;
-    setState("idle");
+    router.push("/");
   }
 
   useEffect(() => {
@@ -115,7 +119,7 @@ function ChatPageInner() {
     <main className="flex flex-col h-screen max-w-2xl mx-auto px-4 py-4 gap-3">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold">{label}</h1>
-        {state !== "idle" && (
+        {state === "ready" && (
           <button
             onClick={endSession}
             className="text-sm text-gray-400 hover:text-red-400 transition"
@@ -147,11 +151,12 @@ function ChatPageInner() {
         {state === "error" && (
           <div className="flex flex-col items-center gap-2 p-4 text-center">
             <p className="text-red-400 font-semibold">{errorMsg}</p>
-            {errorMsg.includes("onboarding") && (
-              <a href="/onboarding" className="text-[#6C63FF] underline text-sm">
-                Go to Onboarding
-              </a>
-            )}
+            <button
+              onClick={() => router.push("/")}
+              className="text-[#6C63FF] underline text-sm"
+            >
+              Go back home
+            </button>
           </div>
         )}
 

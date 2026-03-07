@@ -135,7 +135,7 @@ IMPORTANT: Always respond in the same language the user speaks. If they speak He
     )
 
     session.generate_reply(
-        instructions="Greet the user warmly in first person in Hebrew — as if their own voice is welcoming them to speak with their digital self."
+        instructions="Greet the user warmly in first person in English — as if their own voice is welcoming them to speak with their digital self."
     )
 
 
@@ -172,7 +172,7 @@ IMPORTANT: Always respond in the same language the user speaks. If they speak He
     )
 
     session.generate_reply(
-        instructions="Greet the user warmly as a therapist in Hebrew — invite them to share what's on their mind today."
+        instructions="Greet the user warmly as a therapist in English — invite them to share what's on their mind today."
     )
 
 

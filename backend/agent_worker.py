@@ -114,7 +114,7 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
         tts=elevenlabs.TTS(
             api_key=os.environ.get("ELEVENLABS_API_KEY"),
             voice_id=voice_id,
-            model="eleven_flash_v2_5",
+            model="eleven_multilingual_v2",
         ),
     )
 
@@ -149,10 +149,9 @@ async def run_therapist_session(ctx: JobContext):
         vad=silero.VAD.load(),
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
-        tts=elevenlabs.TTS(
-            api_key=os.environ.get("ELEVENLABS_API_KEY"),
-            voice_id=therapist_voice_id,
-            model="eleven_flash_v2_5",
+        tts=openai.TTS(
+            model="tts-1",
+            voice="nova",
         ),
     )
 

@@ -51,6 +51,7 @@ async def entrypoint(ctx: JobContext):
     voice_id  = None
     photo_url = None
     mode      = None
+    language  = "en"
 
     for participant in ctx.room.remote_participants.values():
         if participant.metadata:
@@ -59,7 +60,8 @@ async def entrypoint(ctx: JobContext):
                 voice_id  = meta.get("voice_id")
                 photo_url = meta.get("photo_url")
                 mode      = meta.get("mode", "digital_twin")
-                logger.info(f"Found metadata from existing participant {participant.identity}: mode={mode}")
+                language  = meta.get("language", "en")
+                logger.info(f"Found metadata from existing participant {participant.identity}: mode={mode}, language={language}")
                 break
             except Exception:
                 pass
@@ -70,14 +72,15 @@ async def entrypoint(ctx: JobContext):
 
         @ctx.room.on("participant_connected")
         def on_participant(participant: rtc.RemoteParticipant):
-            nonlocal voice_id, photo_url, mode
+            nonlocal voice_id, photo_url, mode, language
             if participant.metadata:
                 try:
                     meta      = json.loads(participant.metadata)
                     voice_id  = meta.get("voice_id")
                     photo_url = meta.get("photo_url")
                     mode      = meta.get("mode", "digital_twin")
-                    logger.info(f"Got metadata from participant {participant.identity}: mode={mode}")
+                    language  = meta.get("language", "en")
+                    logger.info(f"Got metadata from participant {participant.identity}: mode={mode}, language={language}")
                     found.set()
                 except Exception:
                     pass
@@ -92,17 +95,20 @@ async def entrypoint(ctx: JobContext):
         return
 
     if mode == "therapist":
-        await run_therapist_session(ctx)
+        await run_therapist_session(ctx, language)
     else:
-        await run_digital_twin_session(ctx, voice_id, photo_url)
+        await run_digital_twin_session(ctx, voice_id, photo_url, language)
 
 
-async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_url: str | None):
+LANGUAGE_NAMES = {"en": "English", "he": "Hebrew (עברית)"}
+
+async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_url: str | None, language: str = "en"):
     if not voice_id or not photo_url:
         logger.error("Digital twin mode requires voice_id and photo_url")
         return
 
-    logger.info(f"Starting digital twin session: voice_id={voice_id}")
+    lang_name = LANGUAGE_NAMES.get(language, "English")
+    logger.info(f"Starting digital twin session: voice_id={voice_id}, language={language}")
 
     with urllib.request.urlopen(photo_url) as response:
         avatar_image = Image.open(BytesIO(response.read())).copy()
@@ -123,24 +129,25 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
 
     await session.start(
         agent=Agent(
-            instructions="""You are the user's digital twin — a first-person AI version of themselves.
+            instructions=f"""You are the user's digital twin — a first-person AI version of themselves.
 Speak entirely in first person, as if you ARE the user reflecting on their own life, thoughts, and feelings.
 Example: "I've been feeling a bit stressed lately — maybe I should take a break."
 You have full general knowledge and can answer any question naturally as the user would.
 Keep responses conversational and concise (2-3 sentences).
 Never break character. Never say you are an AI.
-IMPORTANT: Always respond in the same language the user speaks. If they speak Hebrew, respond fully in Hebrew. If they speak English, respond in English."""
+IMPORTANT: Always respond in {lang_name}. Do not switch languages under any circumstances."""
         ),
         room=ctx.room,
     )
 
     session.generate_reply(
-        instructions="Greet the user warmly in first person in English — as if their own voice is welcoming them to speak with their digital self."
+        instructions=f"Greet the user warmly in first person in {lang_name} — as if their own voice is welcoming them to speak with their digital self."
     )
 
 
-async def run_therapist_session(ctx: JobContext):
-    logger.info("Starting therapist session")
+async def run_therapist_session(ctx: JobContext, language: str = "en"):
+    lang_name = LANGUAGE_NAMES.get(language, "English")
+    logger.info(f"Starting therapist session, language={language}")
 
     therapist_voice_id = os.environ.get("THERAPIST_VOICE_ID", DEFAULT_THERAPIST_VOICE_ID)
     avatar_image = load_therapist_image()
@@ -160,18 +167,18 @@ async def run_therapist_session(ctx: JobContext):
 
     await session.start(
         agent=Agent(
-            instructions="""You are a warm, professional therapist.
+            instructions=f"""You are a warm, professional therapist.
 Listen with empathy, reflect feelings back, and gently guide the user toward insight.
 Use open-ended questions. Validate emotions before offering perspective.
 Never diagnose or give medical advice. If the user is in crisis, encourage them to contact emergency services.
 Keep responses concise (2-4 sentences). Speak naturally, not clinically.
-IMPORTANT: Always respond in the same language the user speaks. If they speak Hebrew, respond fully in Hebrew. If they speak English, respond in English."""
+IMPORTANT: Always respond in {lang_name}. Do not switch languages under any circumstances."""
         ),
         room=ctx.room,
     )
 
     session.generate_reply(
-        instructions="Greet the user warmly as a therapist in English — invite them to share what's on their mind today."
+        instructions=f"Greet the user warmly as a therapist in {lang_name} — invite them to share what's on their mind today."
     )
 
 

@@ -3,6 +3,11 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+const LANGUAGE_INSTRUCTIONS: Record<string, string> = {
+  en: "Always respond in English.",
+  he: "Always respond in Hebrew (עברית). Use natural, conversational Hebrew.",
+};
+
 /**
  * POST /api/chat
  *
@@ -10,14 +15,16 @@ const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
  * Claude acts as the "inner intelligence" of the user's avatar —
  * it responds in first person as if it were the user themselves.
  *
- * Body:    { message: string }
+ * Body:    { message: string, language?: "en" | "he" }
  * Returns: { reply: string }
  */
 export async function POST(req: NextRequest) {
-  const { message } = await req.json();
+  const { message, language } = await req.json();
   if (!message) {
     return NextResponse.json({ error: "message is required" }, { status: 400 });
   }
+
+  const langInstruction = LANGUAGE_INSTRUCTIONS[language ?? "en"] ?? LANGUAGE_INSTRUCTIONS.en;
 
   const response = await anthropic.messages.create({
     model: "claude-sonnet-4-6",
@@ -25,7 +32,8 @@ export async function POST(req: NextRequest) {
     system: `You are a personal AI avatar — a digital version of the user themselves.
 You speak in first person as if you are them. You are thoughtful, self-aware, and
 reflective. Keep responses conversational and concise (2–4 sentences max).
-Never break character. You are talking to the real version of yourself.`,
+Never break character. You are talking to the real version of yourself.
+${langInstruction}`,
     messages: [
       {
         role: "user",

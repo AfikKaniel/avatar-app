@@ -6,6 +6,7 @@ import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
  *
  * Query params:
  *   mode         - "digital_twin" | "therapist"
+ *   language     - "en" | "he" (defaults to "en")
  *   voiceId      - required when mode=digital_twin
  *   photoUrl     - required when mode=digital_twin
  */
@@ -23,6 +24,7 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const mode     = searchParams.get("mode") ?? "digital_twin";
+  const language = searchParams.get("language") ?? "en";
   const voiceId  = searchParams.get("voiceId");
   const photoUrl = searchParams.get("photoUrl");
 
@@ -40,10 +42,10 @@ export async function GET(req: NextRequest) {
   const roomService = new RoomServiceClient(httpUrl, apiKey, apiSecret);
   await roomService.createRoom({
     name:     roomName,
-    metadata: JSON.stringify({ mode, voice_id: voiceId, photo_url: photoUrl }),
+    metadata: JSON.stringify({ mode, language, voice_id: voiceId, photo_url: photoUrl }),
   });
 
-  const participantMeta: Record<string, string | null> = { mode };
+  const participantMeta: Record<string, string | null> = { mode, language };
   if (mode === "digital_twin") {
     participantMeta.voice_id  = voiceId;
     participantMeta.photo_url = photoUrl;

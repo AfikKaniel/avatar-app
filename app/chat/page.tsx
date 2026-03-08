@@ -11,8 +11,14 @@ import {
   type RemoteParticipant,
 } from "livekit-client";
 
-type SessionState = "idle" | "connecting" | "ready" | "error";
+type SessionState = "language" | "idle" | "connecting" | "ready" | "error";
 type Mode = "digital_twin" | "therapist";
+type Language = "en" | "he";
+
+const LANGUAGES: { code: Language; label: string; native: string; flag: string }[] = [
+  { code: "en", label: "English", native: "English", flag: "🇺🇸" },
+  { code: "he", label: "Hebrew",  native: "עברית",   flag: "🇮🇱" },
+];
 
 function ChatPageInner() {
   const searchParams = useSearchParams();
@@ -21,21 +27,22 @@ function ChatPageInner() {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const roomRef  = useRef<Room | null>(null);
-  const [state, setState]       = useState<SessionState>("idle");
+  const [state, setState]       = useState<SessionState>("language");
+  const [language, setLanguage] = useState<Language | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [micOn, setMicOn]       = useState(true);
 
   const label = mode === "therapist" ? "Your Therapist" : "Your Digital Twin";
   const connectingLabel = mode === "therapist" ? "Connecting to your therapist…" : "Waking up your avatar…";
 
-  async function startSession() {
+  async function startSession(lang: Language) {
     setState("connecting");
 
     try {
       let params: URLSearchParams;
 
       if (mode === "therapist") {
-        params = new URLSearchParams({ mode: "therapist" });
+        params = new URLSearchParams({ mode: "therapist", language: lang });
       } else {
         const voiceId  = localStorage.getItem("voiceId");
         const photoUrl = localStorage.getItem("photoUrl");
@@ -45,7 +52,7 @@ function ChatPageInner() {
           setState("error");
           return;
         }
-        params = new URLSearchParams({ mode: "digital_twin", voiceId, photoUrl });
+        params = new URLSearchParams({ mode: "digital_twin", voiceId, photoUrl, language: lang });
       }
 
       const res = await fetch(`/api/livekit/connection-details?${params}`);
@@ -108,17 +115,63 @@ function ChatPageInner() {
   }
 
   useEffect(() => {
-    startSession();
     return () => {
       roomRef.current?.disconnect();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // ── Language picker ──────────────────────────────────────────────────────
+  if (state === "language") {
+    return (
+      <main className="flex flex-col items-center justify-center min-h-screen px-4 gap-8" style={{ marginTop: "-8vh" }}>
+        <div className="text-center space-y-2">
+          <h1 className="text-2xl font-bold text-white">Choose Your Language</h1>
+          <p className="text-gray-400 text-sm">
+            The conversation will be in the language you select.
+          </p>
+        </div>
+
+        <div className="flex gap-4">
+          {LANGUAGES.map((lang) => (
+            <button
+              key={lang.code}
+              onClick={() => {
+                setLanguage(lang.code);
+                startSession(lang.code);
+              }}
+              className="flex flex-col items-center gap-3 w-40 py-6 rounded-2xl border border-[#6C63FF]/40 bg-[#6C63FF]/5 hover:bg-[#6C63FF]/15 hover:border-[#6C63FF]/70 transition group"
+            >
+              <span className="text-5xl">{lang.flag}</span>
+              <span className="text-white font-semibold text-sm group-hover:text-[#a09cf0] transition">
+                {lang.native}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={() => router.push("/")}
+          className="text-gray-500 hover:text-gray-300 text-sm transition"
+        >
+          ← Back
+        </button>
+      </main>
+    );
+  }
+
+  // ── Session screen ────────────────────────────────────────────────────────
   return (
     <main className="flex flex-col h-screen max-w-2xl mx-auto px-4 py-4 gap-3">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">{label}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-bold">{label}</h1>
+          {language && (
+            <span className="text-lg" title={LANGUAGES.find(l => l.code === language)?.label}>
+              {LANGUAGES.find(l => l.code === language)?.flag}
+            </span>
+          )}
+        </div>
         {state === "ready" && (
           <button
             onClick={endSession}

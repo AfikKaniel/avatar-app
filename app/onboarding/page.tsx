@@ -157,10 +157,10 @@ export default function OnboardingPage() {
             Your avatar has your face and your voice. Go say hello.
           </p>
           <button
-            onClick={() => router.push("/chat")}
+            onClick={() => router.push("/")}
             className="bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-10 rounded-xl transition"
           >
-            Talk to My Avatar
+            Let's Go
           </button>
         </div>
       )}

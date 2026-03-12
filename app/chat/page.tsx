@@ -9,6 +9,8 @@ import {
   type RemoteTrack,
   type RemoteTrackPublication,
   type RemoteParticipant,
+  type TranscriptionSegment,
+  type Participant,
 } from "livekit-client";
 
 type SessionState = "language" | "idle" | "connecting" | "ready" | "error";
@@ -25,21 +27,29 @@ function ChatPageInner() {
   const router = useRouter();
   const mode = (searchParams.get("mode") ?? "digital_twin") as Mode;
 
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const roomRef  = useRef<Room | null>(null);
+  const videoRef      = useRef<HTMLVideoElement>(null);
+  const roomRef       = useRef<Room | null>(null);
+  const transcriptRef = useRef<{ speaker: string; text: string }[]>([]);
   const [state, setState]       = useState<SessionState>("language");
   const [language, setLanguage] = useState<Language | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [micOn, setMicOn]       = useState(true);
+
+  const memoryKey = `sessionMemory_${mode}`;
+  const isEndingRef = useRef(false);
 
   const label = mode === "therapist" ? "Your Therapist" : "Your Digital Twin";
   const connectingLabel = mode === "therapist" ? "Connecting to your therapist…" : "Waking up your avatar…";
 
   async function startSession(lang: Language) {
     setState("connecting");
+    transcriptRef.current = [];
 
     try {
       let params: URLSearchParams;
+
+      const memory = localStorage.getItem(memoryKey) ?? "";
+      const goal   = localStorage.getItem("userGoal") ?? "";
 
       if (mode === "therapist") {
         params = new URLSearchParams({ mode: "therapist", language: lang });
@@ -55,12 +65,27 @@ function ChatPageInner() {
         params = new URLSearchParams({ mode: "digital_twin", voiceId, photoUrl, language: lang });
       }
 
+      if (memory) params.set("memory", memory);
+      if (goal)   params.set("goal", goal);
+
       const res = await fetch(`/api/livekit/connection-details?${params}`);
       if (!res.ok) throw new Error("Could not get connection details");
       const { serverUrl, participantToken } = await res.json();
 
       const room = new Room();
       roomRef.current = room;
+
+      room.on(
+        RoomEvent.TranscriptionReceived,
+        (segments: TranscriptionSegment[], participant: Participant | undefined) => {
+          for (const seg of segments) {
+            if (seg.final && seg.text.trim()) {
+              const speaker = participant?.isLocal ? "User" : "Avatar";
+              transcriptRef.current.push({ speaker, text: seg.text.trim() });
+            }
+          }
+        }
+      );
 
       room.on(
         RoomEvent.TrackSubscribed,
@@ -86,7 +111,9 @@ function ChatPageInner() {
 
       room.on(RoomEvent.Disconnected, () => {
         roomRef.current = null;
-        router.push("/");
+        if (!isEndingRef.current) {
+          router.push("/");
+        }
       });
 
       await room.connect(serverUrl, participantToken, { autoSubscribe: true });
@@ -107,10 +134,30 @@ function ChatPageInner() {
   }
 
   async function endSession() {
+    isEndingRef.current = true;
     document.querySelectorAll("audio").forEach((el) => el.remove());
     if (videoRef.current) videoRef.current.srcObject = null;
     await roomRef.current?.disconnect();
     roomRef.current = null;
+
+    const transcript = transcriptRef.current;
+    if (transcript.length > 0) {
+      try {
+        const previousMemory = localStorage.getItem(memoryKey) ?? "";
+        const res = await fetch("/api/summarize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ transcript, mode, previousMemory }),
+        });
+        if (res.ok) {
+          const { summary } = await res.json();
+          if (summary) localStorage.setItem(memoryKey, summary);
+        }
+      } catch {
+        // Memory save failed silently — don't block navigation
+      }
+    }
+
     router.push("/");
   }
 
@@ -175,9 +222,9 @@ function ChatPageInner() {
         {state === "ready" && (
           <button
             onClick={endSession}
-            className="text-sm text-gray-400 hover:text-red-400 transition"
+            className="text-sm text-gray-400 hover:text-gray-200 transition"
           >
-            End Session
+            ← Return to Lobby
           </button>
         )}
       </div>

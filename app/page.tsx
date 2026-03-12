@@ -2,15 +2,46 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+const GOAL_LABELS: Record<string, { icon: string; label: string }> = {
+  quit_smoking: { icon: "🚭", label: "Quit Smoking" },
+  drink_water:  { icon: "💧", label: "Drink More Water" },
+  stand_more:   { icon: "🧍", label: "Stand More" },
+};
+
+const MODE_LABELS: Record<string, string> = {
+  digital_twin: "Digital Twin",
+  therapist:    "AI Therapist",
+};
 
 export default function Home() {
-  const [hasAvatar, setHasAvatar] = useState(false);
+  const router = useRouter();
+  const [setup, setSetup] = useState<{
+    goal: string;
+    mode: string;
+    hasAvatar: boolean;
+  } | null>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const voiceId  = localStorage.getItem("voiceId");
+    const goal    = localStorage.getItem("userGoal");
+    const mode    = localStorage.getItem("userMode");
+    const voiceId = localStorage.getItem("voiceId");
     const photoUrl = localStorage.getItem("photoUrl");
-    setHasAvatar(!!voiceId && !!photoUrl);
+
+    if (goal && mode) {
+      setSetup({ goal, mode, hasAvatar: !!voiceId && !!photoUrl });
+    }
+    setReady(true);
   }, []);
+
+  function handleNewAdventure() {
+    router.push("/setup");
+  }
+
+  // Don't render until localStorage is read (avoids flash)
+  if (!ready) return null;
 
   return (
     <main
@@ -34,75 +65,73 @@ export default function Home() {
           GAGING.AI
         </h1>
         <p className="text-gray-400 text-lg max-w-md">
-          Choose how you want to begin your session today.
+          {setup
+            ? "Welcome back. Ready to keep going?"
+            : "Your AI companion for building better habits."}
         </p>
       </div>
 
-      {/* Mode cards */}
-      <div className="flex flex-col sm:flex-row gap-5 w-full max-w-xl">
-
-        {/* Digital Twin card */}
-        <div className="flex-1 flex flex-col gap-4 rounded-2xl border border-[#6C63FF]/40 bg-[#6C63FF]/5 p-6 text-left">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-[#a09cf0] mb-1">
-              Digital Twin
-            </p>
-            <h2 className="text-lg font-bold text-white leading-snug">
-              Talk to yourself
-            </h2>
-            <p className="text-gray-400 text-sm mt-2">
-              Speak with an AI version of you — your face, your voice, your perspective.
-            </p>
+      {/* ── Returning user ─────────────────────────────────────────────── */}
+      {setup ? (
+        <div className="flex flex-col items-center gap-6 w-full max-w-sm">
+          {/* Goal badge */}
+          <div className="flex items-center gap-3 px-5 py-3 rounded-2xl border border-[#6C63FF]/40 bg-[#6C63FF]/5">
+            <span className="text-3xl">
+              {GOAL_LABELS[setup.goal]?.icon ?? "🎯"}
+            </span>
+            <div className="text-left">
+              <p className="text-xs text-gray-400 uppercase tracking-widest">
+                Your goal
+              </p>
+              <p className="text-white font-semibold">
+                {GOAL_LABELS[setup.goal]?.label ?? setup.goal}
+              </p>
+              <p className="text-xs text-gray-500">
+                via {MODE_LABELS[setup.mode] ?? setup.mode}
+              </p>
+            </div>
           </div>
 
-          {hasAvatar ? (
-            <div className="flex flex-col gap-2 mt-auto">
-              <Link
-                href="/chat?mode=digital_twin"
-                className="text-center bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-2.5 px-6 rounded-xl transition text-sm"
-              >
-                Talk to My Twin
-              </Link>
-              <Link
-                href="/onboarding"
-                className="text-center border border-gray-600 hover:border-gray-400 text-gray-300 font-semibold py-2.5 px-6 rounded-xl transition text-sm"
-              >
-                Recreate My Avatar
-              </Link>
-            </div>
+          {/* Continue — for digital_twin, only show if avatar exists */}
+          {setup.mode === "therapist" ? (
+            <Link
+              href="/chat?mode=therapist"
+              className="w-full text-center bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-6 rounded-xl transition"
+            >
+              Continue Your Journey
+            </Link>
+          ) : setup.hasAvatar ? (
+            <Link
+              href="/chat?mode=digital_twin"
+              className="w-full text-center bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-6 rounded-xl transition"
+            >
+              Continue Your Journey
+            </Link>
           ) : (
             <Link
               href="/onboarding"
-              className="mt-auto text-center bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-2.5 px-6 rounded-xl transition text-sm"
+              className="w-full text-center bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-6 rounded-xl transition"
             >
-              Create My Avatar
+              Create My Avatar to Continue
             </Link>
           )}
-        </div>
 
-        {/* Therapist card */}
-        <div className="flex-1 flex flex-col gap-4 rounded-2xl border border-gray-600 bg-white/3 p-6 text-left">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-1">
-              Professional Therapist
-            </p>
-            <h2 className="text-lg font-bold text-white leading-snug">
-              Talk to a therapist
-            </h2>
-            <p className="text-gray-400 text-sm mt-2">
-              Speak with a professional AI therapist — no setup needed, start immediately.
-            </p>
-          </div>
-
-          <Link
-            href="/chat?mode=therapist"
-            className="mt-auto text-center border border-gray-500 hover:border-gray-300 text-gray-200 hover:text-white font-semibold py-2.5 px-6 rounded-xl transition text-sm"
+          <button
+            onClick={handleNewAdventure}
+            className="w-full text-center border border-gray-600 hover:border-gray-400 text-gray-300 hover:text-white font-semibold py-3 px-6 rounded-xl transition text-sm"
           >
-            Talk to a Therapist
-          </Link>
+            Start New Adventure
+          </button>
         </div>
-
-      </div>
+      ) : (
+        /* ── First-time user ──────────────────────────────────────────── */
+        <Link
+          href="/setup"
+          className="bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-10 rounded-xl transition text-lg"
+        >
+          Get Started
+        </Link>
+      )}
     </main>
   );
 }

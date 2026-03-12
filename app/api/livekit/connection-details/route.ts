@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
+import { AccessToken, AgentDispatchClient, RoomServiceClient } from "livekit-server-sdk";
 
 /**
  * GET /api/livekit/connection-details
@@ -9,6 +9,7 @@ import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
  *   language     - "en" | "he" (defaults to "en")
  *   voiceId      - required when mode=digital_twin
  *   photoUrl     - required when mode=digital_twin
+ *   memory       - optional summary of previous sessions
  */
 export async function GET(req: NextRequest) {
   const apiKey    = process.env.LIVEKIT_API_KEY;
@@ -27,6 +28,8 @@ export async function GET(req: NextRequest) {
   const language = searchParams.get("language") ?? "en";
   const voiceId  = searchParams.get("voiceId");
   const photoUrl = searchParams.get("photoUrl");
+  const memory   = searchParams.get("memory") ?? "";
+  const goal     = searchParams.get("goal") ?? "";
 
   if (mode === "digital_twin" && (!voiceId || !photoUrl)) {
     return NextResponse.json(
@@ -45,11 +48,21 @@ export async function GET(req: NextRequest) {
     metadata: JSON.stringify({ mode, language, voice_id: voiceId, photo_url: photoUrl }),
   });
 
+  const agentDispatchClient = new AgentDispatchClient(httpUrl, apiKey, apiSecret);
+  try {
+    const dispatch = await agentDispatchClient.createDispatch(roomName, "avatar-agent");
+    console.log("[dispatch] created:", JSON.stringify(dispatch));
+  } catch (err) {
+    console.error("[dispatch] FAILED:", err);
+  }
+
   const participantMeta: Record<string, string | null> = { mode, language };
   if (mode === "digital_twin") {
     participantMeta.voice_id  = voiceId;
     participantMeta.photo_url = photoUrl;
   }
+  if (memory) participantMeta.memory = memory;
+  if (goal)   participantMeta.goal   = goal;
 
   const token = new AccessToken(apiKey, apiSecret, {
     identity: participantName,

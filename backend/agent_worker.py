@@ -135,6 +135,9 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
             voice_id=voice_id,
             model="eleven_multilingual_v2",
         ),
+        # Require at least 3 words before interrupting the agent mid-speech
+        allow_interruptions=True,
+        interrupt_min_words=3,
     )
 
     hedra_avatar = hedra.AvatarSession(avatar_image=avatar_image)
@@ -157,6 +160,8 @@ IMPORTANT: Always respond in {lang_name}. Do not switch languages under any circ
         room=ctx.room,
     )
 
+    # Wait for the Hedra video stream to establish before speaking
+    await asyncio.sleep(2)
     session.generate_reply(
         instructions=f"Say a single short greeting in {lang_name} — no more than 6 words. Something like 'Hey! I'm here for us.' Do not say anything else."
     )
@@ -177,6 +182,9 @@ async def run_therapist_session(ctx: JobContext, language: str = "en", memory: s
             model="tts-1",
             voice="nova",
         ),
+        # Require at least 3 words before interrupting the agent mid-speech
+        allow_interruptions=True,
+        interrupt_min_words=3,
     )
 
     hedra_avatar = hedra.AvatarSession(avatar_image=avatar_image)
@@ -198,6 +206,8 @@ IMPORTANT: Always respond in {lang_name}. Do not switch languages under any circ
         room=ctx.room,
     )
 
+    # Wait for the Hedra video stream to establish before speaking
+    await asyncio.sleep(2)
     session.generate_reply(
         instructions=f"Say a single short greeting in {lang_name} — no more than 6 words. Something like 'Hey, I'm here. What's up?' Do not say anything else."
     )

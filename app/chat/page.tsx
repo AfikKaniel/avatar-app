@@ -34,9 +34,16 @@ function ChatPageInner() {
   const [language, setLanguage] = useState<Language | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [micOn, setMicOn]       = useState(true);
+  const [avatarPhoto, setAvatarPhoto] = useState<string>("");
 
   const memoryKey = `sessionMemory_${mode}`;
   const isEndingRef = useRef(false);
+
+  useEffect(() => {
+    if (mode === "digital_twin") {
+      setAvatarPhoto(localStorage.getItem("photoUrl") ?? "");
+    }
+  }, [mode]);
 
   const label = mode === "therapist" ? "Your Therapist" : "Your Digital Twin";
   const connectingLabel = mode === "therapist" ? "Connecting to your therapist…" : "Waking up your avatar…";
@@ -106,7 +113,11 @@ function ChatPageInner() {
       );
 
       room.on(RoomEvent.TrackUnsubscribed, (track: RemoteTrack) => {
-        track.detach();
+        // Only detach audio — detaching video nulls srcObject and causes black flicker
+        // between avatar utterances. Video is cleaned up explicitly in endSession.
+        if (track.kind === Track.Kind.Audio) {
+          track.detach();
+        }
       });
 
       room.on(RoomEvent.Disconnected, () => {
@@ -231,7 +242,12 @@ function ChatPageInner() {
 
       <div
         className="relative bg-gray-900 rounded-2xl overflow-hidden flex-1 flex items-center justify-center"
-        style={{ maxHeight: "75vh" }}
+        style={{
+          maxHeight: "75vh",
+          backgroundImage: avatarPhoto ? `url(${avatarPhoto})` : undefined,
+          backgroundSize: "cover",
+          backgroundPosition: "center",
+        }}
       >
         <video
           ref={videoRef}

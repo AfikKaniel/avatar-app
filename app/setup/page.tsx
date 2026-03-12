@@ -31,6 +31,7 @@ const GOALS: { id: Goal; icon: string; label: string; description: string }[] = 
 export default function SetupPage() {
   const router = useRouter();
   const [step, setStep] = useState<Step>("goal");
+  const [pendingGoal, setPendingGoal] = useState<Goal | null>(null);
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   const [hasAvatar, setHasAvatar] = useState(false);
 
@@ -40,6 +41,12 @@ export default function SetupPage() {
     setHasAvatar(!!voiceId && !!photoUrl);
   }, []);
 
+  function confirmGoal() {
+    if (!pendingGoal) return;
+    setSelectedGoal(pendingGoal);
+    setStep("mode");
+  }
+
   function saveAndClearMemory(goal: Goal, mode: Mode) {
     localStorage.setItem("userGoal", goal);
     localStorage.setItem("userMode", mode);
@@ -47,17 +54,11 @@ export default function SetupPage() {
     localStorage.removeItem("sessionMemory_therapist");
   }
 
-  function handleGoalSelect(goal: Goal) {
-    setSelectedGoal(goal);
-    setStep("mode");
-  }
-
   function handleModeSelect(mode: Mode) {
     if (mode === "therapist") {
       saveAndClearMemory(selectedGoal!, mode);
       router.push("/");
     } else {
-      // Digital twin — if avatar exists, offer to keep or recreate
       if (hasAvatar) {
         setStep("avatar");
       } else {
@@ -79,7 +80,7 @@ export default function SetupPage() {
 
   return (
     <main
-      className="flex flex-col items-center justify-center min-h-screen gap-10 px-4 text-center"
+      className="flex flex-col items-center justify-center min-h-screen gap-8 px-4 text-center"
       style={{ marginTop: "-8vh" }}
     >
       {/* ── Goal selection ─────────────────────────────────────────────── */}
@@ -93,23 +94,45 @@ export default function SetupPage() {
             </p>
           </div>
 
-          <div className="flex flex-col gap-4 w-full max-w-sm">
-            {GOALS.map((goal) => (
-              <button
-                key={goal.id}
-                onClick={() => handleGoalSelect(goal.id)}
-                className="flex items-center gap-4 text-left w-full rounded-2xl border border-[#6C63FF]/40 bg-[#6C63FF]/5 hover:bg-[#6C63FF]/15 hover:border-[#6C63FF]/70 p-5 transition group"
-              >
-                <span className="text-4xl">{goal.icon}</span>
-                <div>
-                  <p className="text-white font-semibold group-hover:text-[#a09cf0] transition">
-                    {goal.label}
-                  </p>
-                  <p className="text-gray-400 text-xs mt-0.5">{goal.description}</p>
-                </div>
-              </button>
-            ))}
+          <div className="flex flex-col gap-3 w-full max-w-sm">
+            {GOALS.map((goal) => {
+              const isSelected = pendingGoal === goal.id;
+              return (
+                <button
+                  key={goal.id}
+                  onClick={() => setPendingGoal(goal.id)}
+                  className={`flex items-center gap-4 text-left w-full rounded-2xl border p-5 transition ${
+                    isSelected
+                      ? "border-[#6C63FF] bg-[#6C63FF]/15 ring-1 ring-[#6C63FF]/50"
+                      : "border-gray-600 bg-white/3"
+                  }`}
+                >
+                  <span className="text-4xl">{goal.icon}</span>
+                  <div>
+                    <p className={`font-semibold transition ${isSelected ? "text-[#a09cf0]" : "text-white"}`}>
+                      {goal.label}
+                    </p>
+                    <p className="text-gray-400 text-xs mt-0.5">{goal.description}</p>
+                  </div>
+                  {isSelected && (
+                    <span className="ml-auto text-[#6C63FF] text-lg">✓</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
+
+          <button
+            onClick={confirmGoal}
+            disabled={!pendingGoal}
+            className={`w-full max-w-sm py-3 px-6 rounded-xl font-semibold text-white transition ${
+              pendingGoal
+                ? "bg-[#6C63FF] hover:bg-[#5a52e0]"
+                : "bg-gray-700 text-gray-500 cursor-not-allowed"
+            }`}
+          >
+            Confirm
+          </button>
         </>
       )}
 
@@ -129,38 +152,34 @@ export default function SetupPage() {
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-xl">
-            {/* Digital Twin */}
             <button
               onClick={() => handleModeSelect("digital_twin")}
-              className="flex-1 flex flex-col gap-3 text-left rounded-2xl border border-[#6C63FF]/40 bg-[#6C63FF]/5 hover:bg-[#6C63FF]/15 hover:border-[#6C63FF]/70 p-6 transition group"
+              className="flex-1 flex flex-col gap-3 text-left rounded-2xl border border-[#6C63FF]/40 bg-[#6C63FF]/5 active:bg-[#6C63FF]/15 p-6 transition group"
             >
               <p className="text-xs font-semibold uppercase tracking-widest text-[#a09cf0]">
                 Digital Twin
               </p>
               <h2 className="text-lg font-bold text-white">Talk to yourself</h2>
               <p className="text-gray-400 text-sm">
-                Speak with an AI version of you — your face, your voice, your
-                perspective.
+                Speak with an AI version of you — your face, your voice, your perspective.
               </p>
-              <span className="mt-auto text-[#6C63FF] text-sm font-semibold group-hover:text-[#a09cf0] transition">
+              <span className="mt-auto text-[#6C63FF] text-sm font-semibold">
                 {hasAvatar ? "Use my avatar →" : "Set up my avatar →"}
               </span>
             </button>
 
-            {/* Therapist */}
             <button
               onClick={() => handleModeSelect("therapist")}
-              className="flex-1 flex flex-col gap-3 text-left rounded-2xl border border-gray-600 bg-white/3 hover:bg-white/5 hover:border-gray-400 p-6 transition group"
+              className="flex-1 flex flex-col gap-3 text-left rounded-2xl border border-gray-600 bg-white/3 active:bg-white/5 p-6 transition"
             >
               <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
                 AI Therapist
               </p>
               <h2 className="text-lg font-bold text-white">Talk to a therapist</h2>
               <p className="text-gray-400 text-sm">
-                A warm, professional AI therapist — no setup needed, start
-                immediately.
+                A warm, professional AI therapist — no setup needed, start immediately.
               </p>
-              <span className="mt-auto text-gray-300 text-sm font-semibold group-hover:text-white transition">
+              <span className="mt-auto text-gray-300 text-sm font-semibold">
                 Start now →
               </span>
             </button>
@@ -168,7 +187,7 @@ export default function SetupPage() {
 
           <button
             onClick={() => setStep("goal")}
-            className="text-gray-500 hover:text-gray-300 text-sm transition"
+            className="text-gray-500 text-sm transition"
           >
             ← Back
           </button>
@@ -182,20 +201,20 @@ export default function SetupPage() {
             <div className="text-4xl">🪞</div>
             <h1 className="text-3xl font-black text-white">Your Avatar</h1>
             <p className="text-gray-400 text-sm max-w-sm">
-              You already have an avatar. Do you want to keep it or create a new one?
+              You already have an avatar. Keep it or create a new one?
             </p>
           </div>
 
           <div className="flex flex-col gap-4 w-full max-w-sm">
             <button
               onClick={handleKeepAvatar}
-              className="w-full text-center bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-6 rounded-xl transition"
+              className="w-full text-center bg-[#6C63FF] active:bg-[#5a52e0] text-white font-semibold py-3 px-6 rounded-xl transition"
             >
               Keep My Avatar
             </button>
             <button
               onClick={handleNewAvatar}
-              className="w-full text-center border border-gray-600 hover:border-gray-400 text-gray-300 hover:text-white font-semibold py-3 px-6 rounded-xl transition"
+              className="w-full text-center border border-gray-600 text-gray-300 font-semibold py-3 px-6 rounded-xl transition"
             >
               Create a New Avatar
             </button>
@@ -203,7 +222,7 @@ export default function SetupPage() {
 
           <button
             onClick={() => setStep("mode")}
-            className="text-gray-500 hover:text-gray-300 text-sm transition"
+            className="text-gray-500 text-sm transition"
           >
             ← Back
           </button>

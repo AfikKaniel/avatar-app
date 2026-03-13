@@ -214,36 +214,71 @@ function applyStyle(img: HTMLImageElement, iris: IrisPoints | null): Promise<Blo
     const ctx = canvas.getContext("2d");
     if (!ctx) { reject(new Error("No canvas context")); return; }
 
-    // ── 1. Draw with vivid / animated filter ─────────────────────────────
-    ctx.filter = "saturate(138%) contrast(109%) brightness(103%)";
+    // ── 1. Soft base: skin-smoothing blur at low opacity ─────────────────
+    ctx.filter = "blur(1.5px) brightness(101%)";
+    ctx.globalAlpha = 0.35;
     ctx.drawImage(img, 0, 0);
+    ctx.globalAlpha = 1.0;
     ctx.filter = "none";
 
-    // ── 2. Light-blue iris overlay ────────────────────────────────────────
+    // ── 2. Vivid animated pass: sharp + high saturation on top ───────────
+    ctx.filter = "saturate(185%) contrast(118%) brightness(106%)";
+    ctx.globalAlpha = 0.88;
+    ctx.drawImage(img, 0, 0);
+    ctx.globalAlpha = 1.0;
+    ctx.filter = "none";
+
+    // ── 3. Color bloom / digital halation glow ────────────────────────────
+    ctx.save();
+    ctx.filter = "blur(10px) saturate(160%)";
+    ctx.globalCompositeOperation = "screen";
+    ctx.globalAlpha = 0.18;
+    ctx.drawImage(img, 0, 0);
+    ctx.restore();
+    ctx.filter = "none";
+
+    // ── 4. Blue iris — two passes for realistic vivid color ───────────────
     if (iris) {
       for (const eye of [iris.left, iris.right]) {
+        const { x, y, r } = eye;
+
+        // Pass A: "color" blend — swaps hue to blue while keeping luminosity/texture
         ctx.save();
-        ctx.globalCompositeOperation = "overlay";
-        const g = ctx.createRadialGradient(eye.x, eye.y, 0, eye.x, eye.y, eye.r);
-        g.addColorStop(0,   "rgba(90, 185, 255, 0.80)");
-        g.addColorStop(0.45,"rgba(70, 160, 245, 0.60)");
-        g.addColorStop(0.80,"rgba(50, 130, 230, 0.25)");
-        g.addColorStop(1,   "rgba(30, 110, 210, 0)");
-        ctx.fillStyle = g;
+        ctx.globalCompositeOperation = "color";
+        ctx.globalAlpha = 0.88;
+        const gc = ctx.createRadialGradient(x, y, 0, x, y, r);
+        gc.addColorStop(0,    "rgba(0, 140, 255, 1)");
+        gc.addColorStop(0.60, "rgba(10, 110, 240, 1)");
+        gc.addColorStop(1,    "rgba(20,  90, 220, 0)");
+        ctx.fillStyle = gc;
         ctx.beginPath();
-        ctx.ellipse(eye.x, eye.y, eye.r, eye.r * 0.88, 0, 0, Math.PI * 2);
+        ctx.ellipse(x, y, r, r * 0.88, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Pass B: "screen" — adds bright-blue luminance pop / digital shine
+        ctx.save();
+        ctx.globalCompositeOperation = "screen";
+        ctx.globalAlpha = 0.40;
+        const gs = ctx.createRadialGradient(x, y, 0, x, y, r * 0.65);
+        gs.addColorStop(0,   "rgba(100, 200, 255, 0.75)");
+        gs.addColorStop(0.5, "rgba( 60, 160, 255, 0.35)");
+        gs.addColorStop(1,   "rgba( 20, 120, 240, 0)");
+        ctx.fillStyle = gs;
+        ctx.beginPath();
+        ctx.ellipse(x, y, r * 0.70, r * 0.62, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }
     }
 
-    // ── 3. Subtle vignette for cinematic depth ────────────────────────────
+    // ── 5. Cinematic vignette ─────────────────────────────────────────────
     const vg = ctx.createRadialGradient(
-      canvas.width / 2, canvas.height / 2, canvas.height * 0.28,
-      canvas.width / 2, canvas.height / 2, canvas.height * 0.78
+      canvas.width / 2, canvas.height / 2, canvas.height * 0.25,
+      canvas.width / 2, canvas.height / 2, canvas.height * 0.80
     );
     vg.addColorStop(0, "rgba(0,0,0,0)");
-    vg.addColorStop(1, "rgba(0,0,0,0.28)");
+    vg.addColorStop(1, "rgba(0,0,0,0.32)");
     ctx.fillStyle = vg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 

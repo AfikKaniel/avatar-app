@@ -214,65 +214,74 @@ function applyStyle(img: HTMLImageElement, iris: IrisPoints | null): Promise<Blo
     const ctx = canvas.getContext("2d");
     if (!ctx) { reject(new Error("No canvas context")); return; }
 
-    // ── 1. Soft base: skin-smoothing blur at low opacity ─────────────────
+    // ── 1. Skin-smoothing soft base ───────────────────────────────────────
     ctx.filter = "blur(1.5px) brightness(101%)";
-    ctx.globalAlpha = 0.35;
+    ctx.globalAlpha = 0.30;
     ctx.drawImage(img, 0, 0);
     ctx.globalAlpha = 1.0;
     ctx.filter = "none";
 
-    // ── 2. Vivid animated pass: sharp + high saturation on top ───────────
-    ctx.filter = "saturate(185%) contrast(118%) brightness(106%)";
-    ctx.globalAlpha = 0.88;
+    // ── 2. Vivid animated pass — push toward illustrated/cel-shaded ───────
+    ctx.filter = "saturate(230%) contrast(130%) brightness(107%)";
+    ctx.globalAlpha = 0.90;
     ctx.drawImage(img, 0, 0);
     ctx.globalAlpha = 1.0;
     ctx.filter = "none";
 
-    // ── 3. Color bloom / digital halation glow ────────────────────────────
+    // ── 3. Multiply shadow pass — deepens darks for cel-shading feel ──────
     ctx.save();
-    ctx.filter = "blur(10px) saturate(160%)";
-    ctx.globalCompositeOperation = "screen";
-    ctx.globalAlpha = 0.18;
+    ctx.globalCompositeOperation = "multiply";
+    ctx.filter = "saturate(120%) contrast(180%) brightness(60%)";
+    ctx.globalAlpha = 0.22;
     ctx.drawImage(img, 0, 0);
     ctx.restore();
     ctx.filter = "none";
 
-    // ── 4. Blue iris — two passes for realistic vivid color ───────────────
+    // ── 4. Color bloom / digital halation glow ────────────────────────────
+    ctx.save();
+    ctx.filter = "blur(12px) saturate(180%)";
+    ctx.globalCompositeOperation = "screen";
+    ctx.globalAlpha = 0.20;
+    ctx.drawImage(img, 0, 0);
+    ctx.restore();
+    ctx.filter = "none";
+
+    // ── 5. Blue iris — two passes for intense digital-eye look ───────────
     if (iris) {
       for (const eye of [iris.left, iris.right]) {
         const { x, y, r } = eye;
 
-        // Pass A: "color" blend — swaps hue to blue while keeping luminosity/texture
+        // Pass A: "color" blend — replaces hue with blue, keeps luminosity/texture
         ctx.save();
         ctx.globalCompositeOperation = "color";
-        ctx.globalAlpha = 0.88;
+        ctx.globalAlpha = 0.92;
         const gc = ctx.createRadialGradient(x, y, 0, x, y, r);
-        gc.addColorStop(0,    "rgba(0, 140, 255, 1)");
-        gc.addColorStop(0.60, "rgba(10, 110, 240, 1)");
-        gc.addColorStop(1,    "rgba(20,  90, 220, 0)");
+        gc.addColorStop(0,    "rgba(0, 145, 255, 1)");
+        gc.addColorStop(0.55, "rgba(5, 115, 245, 1)");
+        gc.addColorStop(1,    "rgba(15, 90, 225, 0)");
         ctx.fillStyle = gc;
         ctx.beginPath();
         ctx.ellipse(x, y, r, r * 0.88, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
 
-        // Pass B: "screen" — adds bright-blue luminance pop / digital shine
+        // Pass B: "screen" — bright-blue luminance pop + digital shine
         ctx.save();
         ctx.globalCompositeOperation = "screen";
-        ctx.globalAlpha = 0.40;
-        const gs = ctx.createRadialGradient(x, y, 0, x, y, r * 0.65);
-        gs.addColorStop(0,   "rgba(100, 200, 255, 0.75)");
-        gs.addColorStop(0.5, "rgba( 60, 160, 255, 0.35)");
-        gs.addColorStop(1,   "rgba( 20, 120, 240, 0)");
+        ctx.globalAlpha = 0.45;
+        const gs = ctx.createRadialGradient(x, y, 0, x, y, r * 0.60);
+        gs.addColorStop(0,   "rgba(130, 210, 255, 0.80)");
+        gs.addColorStop(0.45,"rgba(70, 170, 255, 0.40)");
+        gs.addColorStop(1,   "rgba(30, 130, 245, 0)");
         ctx.fillStyle = gs;
         ctx.beginPath();
-        ctx.ellipse(x, y, r * 0.70, r * 0.62, 0, 0, Math.PI * 2);
+        ctx.ellipse(x, y, r * 0.68, r * 0.60, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }
     }
 
-    // ── 5. Cinematic vignette ─────────────────────────────────────────────
+    // ── 6. Cinematic vignette ─────────────────────────────────────────────
     const vg = ctx.createRadialGradient(
       canvas.width / 2, canvas.height / 2, canvas.height * 0.25,
       canvas.width / 2, canvas.height / 2, canvas.height * 0.80

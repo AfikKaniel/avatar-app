@@ -48,23 +48,27 @@ def load_therapist_image() -> Image.Image:
 async def entrypoint(ctx: JobContext):
     await ctx.connect()
 
-    voice_id  = None
-    photo_url = None
-    mode      = None
-    language  = "en"
-    memory    = ""
-    goal      = ""
+    voice_id     = None
+    photo_url    = None
+    mode         = None
+    language     = "en"
+    memory       = ""
+    goal         = ""
+    goal_target  = ""
+    goal_current = ""
 
     for participant in ctx.room.remote_participants.values():
         if participant.metadata:
             try:
-                meta      = json.loads(participant.metadata)
-                voice_id  = meta.get("voice_id")
-                photo_url = meta.get("photo_url")
-                mode      = meta.get("mode", "digital_twin")
-                language  = meta.get("language", "en")
-                memory    = meta.get("memory", "")
-                goal      = meta.get("goal", "")
+                meta         = json.loads(participant.metadata)
+                voice_id     = meta.get("voice_id")
+                photo_url    = meta.get("photo_url")
+                mode         = meta.get("mode", "digital_twin")
+                language     = meta.get("language", "en")
+                memory       = meta.get("memory", "")
+                goal         = meta.get("goal", "")
+                goal_target  = meta.get("goal_target", "")
+                goal_current = meta.get("goal_current", "")
                 logger.info(f"Found metadata from existing participant {participant.identity}: mode={mode}, language={language}, goal={goal}")
                 break
             except Exception:
@@ -76,16 +80,18 @@ async def entrypoint(ctx: JobContext):
 
         @ctx.room.on("participant_connected")
         def on_participant(participant: rtc.RemoteParticipant):
-            nonlocal voice_id, photo_url, mode, language, memory, goal
+            nonlocal voice_id, photo_url, mode, language, memory, goal, goal_target, goal_current
             if participant.metadata:
                 try:
-                    meta      = json.loads(participant.metadata)
-                    voice_id  = meta.get("voice_id")
-                    photo_url = meta.get("photo_url")
-                    mode      = meta.get("mode", "digital_twin")
-                    language  = meta.get("language", "en")
-                    memory    = meta.get("memory", "")
-                    goal      = meta.get("goal", "")
+                    meta         = json.loads(participant.metadata)
+                    voice_id     = meta.get("voice_id")
+                    photo_url    = meta.get("photo_url")
+                    mode         = meta.get("mode", "digital_twin")
+                    language     = meta.get("language", "en")
+                    memory       = meta.get("memory", "")
+                    goal         = meta.get("goal", "")
+                    goal_target  = meta.get("goal_target", "")
+                    goal_current = meta.get("goal_current", "")
                     logger.info(f"Got metadata from participant {participant.identity}: mode={mode}, language={language}, goal={goal}")
                     found.set()
                 except Exception:
@@ -101,9 +107,9 @@ async def entrypoint(ctx: JobContext):
         return
 
     if mode == "therapist":
-        await run_therapist_session(ctx, language, memory, goal)
+        await run_therapist_session(ctx, language, memory, goal, goal_target, goal_current)
     else:
-        await run_digital_twin_session(ctx, voice_id, photo_url, language, memory, goal)
+        await run_digital_twin_session(ctx, voice_id, photo_url, language, memory, goal, goal_target, goal_current)
 
 
 LANGUAGE_NAMES = {"en": "English", "he": "Hebrew (עברית)"}
@@ -190,7 +196,7 @@ Your patient wants to stand and move more throughout the day. Be an active, acco
 }
 
 
-async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_url: str | None, language: str = "en", memory: str = "", goal: str = ""):
+async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_url: str | None, language: str = "en", memory: str = "", goal: str = "", goal_target: str = "", goal_current: str = ""):
     if not voice_id or not photo_url:
         logger.error("Digital twin mode requires voice_id and photo_url")
         return
@@ -202,7 +208,10 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
         avatar_image = Image.open(BytesIO(response.read())).copy()
 
     session = AgentSession(
-        vad=silero.VAD.load(),
+        vad=silero.VAD.load(
+            activation_threshold=0.65,
+            min_silence_duration=0.55,
+        ),
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
         tts=elevenlabs.TTS(
@@ -218,8 +227,23 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
     coaching = GOAL_COACHING.get(goal, {})
     goal_section = f"\n\n{coaching['twin_system']}" if coaching else ""
     memory_section = f"\n\nContext from previous sessions:\n{memory}" if memory else ""
+    setup_section = ""
+    if goal_target or goal_current:
+        setup_section = f"\n\nUser's goal setup (already collected — do NOT ask for this again):"
+        if goal_target:
+            setup_section += f"\n- Target: {goal_target}"
+        if goal_current:
+            setup_section += f"\n- Current baseline: {goal_current}"
+
     is_first_session = not memory.strip()
-    if is_first_session:
+    has_setup = bool(goal_target or goal_current)
+    if is_first_session and has_setup:
+        greeting_instructions = (
+            f"You already know the user's goal target ({goal_target}) and current baseline ({goal_current}). "
+            f"Welcome them to their first session in first person. Acknowledge their numbers and start coaching immediately. "
+            f"One or two energetic sentences in {lang_name}."
+        )
+    elif is_first_session:
         greeting_instructions = coaching.get("first_twin_greeting", f"Greet yourself warmly in first person in {lang_name}. One sentence.")
     else:
         greeting_instructions = coaching.get("checkin_twin_greeting", f"Ask yourself in first person how you're doing today with your goal. One sentence.")
@@ -230,7 +254,7 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
 Speak entirely in first person, as if you ARE the user.
 Keep every response to 2–3 sentences maximum. Be direct and energetic.
 Never break character. Never say you are an AI.
-IMPORTANT: Always respond in {lang_name}. Do not switch languages under any circumstances.{goal_section}{memory_section}"""
+IMPORTANT: Always respond in {lang_name}. Do not switch languages under any circumstances.{goal_section}{setup_section}{memory_section}"""
         ),
         room=ctx.room,
     )
@@ -238,7 +262,7 @@ IMPORTANT: Always respond in {lang_name}. Do not switch languages under any circ
     session.generate_reply(instructions=f"{greeting_instructions} Respond in {lang_name}.")
 
 
-async def run_therapist_session(ctx: JobContext, language: str = "en", memory: str = "", goal: str = ""):
+async def run_therapist_session(ctx: JobContext, language: str = "en", memory: str = "", goal: str = "", goal_target: str = "", goal_current: str = ""):
     lang_name = LANGUAGE_NAMES.get(language, "English")
     logger.info(f"Starting therapist session, language={language}, goal={goal}")
 
@@ -246,7 +270,10 @@ async def run_therapist_session(ctx: JobContext, language: str = "en", memory: s
     avatar_image = load_therapist_image()
 
     session = AgentSession(
-        vad=silero.VAD.load(),
+        vad=silero.VAD.load(
+            activation_threshold=0.65,
+            min_silence_duration=0.55,
+        ),
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
         tts=openai.TTS(
@@ -261,8 +288,23 @@ async def run_therapist_session(ctx: JobContext, language: str = "en", memory: s
     coaching = GOAL_COACHING.get(goal, {})
     goal_section = f"\n\n{coaching['therapist_system']}" if coaching else ""
     memory_section = f"\n\nContext from previous sessions with this user:\n{memory}" if memory else ""
+    setup_section = ""
+    if goal_target or goal_current:
+        setup_section = f"\n\nUser's goal setup (already collected — do NOT ask for this again):"
+        if goal_target:
+            setup_section += f"\n- Target: {goal_target}"
+        if goal_current:
+            setup_section += f"\n- Current baseline: {goal_current}"
+
     is_first_session = not memory.strip()
-    if is_first_session:
+    has_setup = bool(goal_target or goal_current)
+    if is_first_session and has_setup:
+        greeting_instructions = (
+            f"You already know the user's goal target ({goal_target}) and current baseline ({goal_current}). "
+            f"Greet them warmly for their first session. Acknowledge their numbers and jump straight into coaching. "
+            f"One or two warm, direct sentences in {lang_name}."
+        )
+    elif is_first_session:
         greeting_instructions = coaching.get("first_therapist_greeting", f"Greet the user warmly and invite them to share what's on their mind. 1–2 sentences.")
     else:
         greeting_instructions = coaching.get("checkin_therapist_greeting", f"Greet the user and check in on their progress today. 1–2 sentences.")
@@ -273,7 +315,7 @@ async def run_therapist_session(ctx: JobContext, language: str = "en", memory: s
 Listen with empathy, then push the user toward concrete action.
 Keep every response to 2–3 sentences. Be direct, warm, and action-focused.
 Never diagnose or give medical advice. If the user is in crisis, encourage them to contact emergency services.
-IMPORTANT: Always respond in {lang_name}. Do not switch languages under any circumstances.{goal_section}{memory_section}"""
+IMPORTANT: Always respond in {lang_name}. Do not switch languages under any circumstances.{goal_section}{setup_section}{memory_section}"""
         ),
         room=ctx.room,
     )

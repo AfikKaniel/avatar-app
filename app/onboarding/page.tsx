@@ -175,10 +175,15 @@ export default function OnboardingPage() {
 
       {/* ── Step 3: Processing ── */}
       {step === "processing" && (
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 border-4 border-[#6C63FF] border-t-transparent rounded-full animate-spin mx-auto" />
-          <h2 className="text-xl font-semibold">{status}</h2>
-          <p className="text-gray-500 text-sm">Just a moment…</p>
+        <div className="text-center space-y-5 max-w-xs mx-auto">
+          <div className="text-5xl animate-bounce">🧬</div>
+          <div className="w-12 h-12 border-4 border-[#6C63FF] border-t-transparent rounded-full animate-spin mx-auto" />
+          <h2 className="text-xl font-semibold text-white">{status}</h2>
+          <p className="text-gray-400 text-sm leading-relaxed">
+            {status.includes("voice") && "Teaching your avatar to speak exactly like you… 🎙️"}
+            {status.includes("avatar") && "Convincing your digital twin to show up… 🤖"}
+            {!status.includes("voice") && !status.includes("avatar") && "Uploading your personality to the cloud… ☁️"}
+          </p>
         </div>
       )}
 
@@ -191,10 +196,10 @@ export default function OnboardingPage() {
             Your avatar has your face and your voice. Go say hello.
           </p>
           <button
-            onClick={() => router.push("/")}
+            onClick={() => router.push("/chat?mode=digital_twin")}
             className="bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-10 rounded-xl transition"
           >
-            Let's Go
+            Meet My Avatar →
           </button>
         </div>
       )}

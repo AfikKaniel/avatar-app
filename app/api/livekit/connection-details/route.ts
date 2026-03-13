@@ -28,8 +28,10 @@ export async function GET(req: NextRequest) {
   const language = searchParams.get("language") ?? "en";
   const voiceId  = searchParams.get("voiceId");
   const photoUrl = searchParams.get("photoUrl");
-  const memory   = searchParams.get("memory") ?? "";
-  const goal     = searchParams.get("goal") ?? "";
+  const memory       = searchParams.get("memory") ?? "";
+  const goal         = searchParams.get("goal") ?? "";
+  const goalTarget   = searchParams.get("goalTarget") ?? "";
+  const goalCurrent  = searchParams.get("goalCurrent") ?? "";
 
   if (mode === "digital_twin" && (!voiceId || !photoUrl)) {
     return NextResponse.json(
@@ -61,8 +63,10 @@ export async function GET(req: NextRequest) {
     participantMeta.voice_id  = voiceId;
     participantMeta.photo_url = photoUrl;
   }
-  if (memory) participantMeta.memory = memory;
-  if (goal)   participantMeta.goal   = goal;
+  if (memory)       participantMeta.memory       = memory;
+  if (goal)         participantMeta.goal         = goal;
+  if (goalTarget)   participantMeta.goal_target  = goalTarget;
+  if (goalCurrent)  participantMeta.goal_current = goalCurrent;
 
   const token = new AccessToken(apiKey, apiSecret, {
     identity: participantName,

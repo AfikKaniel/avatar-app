@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 
 type Goal = "quit_smoking" | "drink_water" | "stand_more";
 type Mode = "digital_twin" | "therapist";
-type Step = "goal" | "mode" | "avatar";
+type Step = "goal" | "goal_target" | "goal_current" | "mode" | "avatar";
 
 const GOALS: { id: Goal; icon: string; label: string; description: string }[] = [
   {
@@ -28,12 +28,40 @@ const GOALS: { id: Goal; icon: string; label: string; description: string }[] = 
   },
 ];
 
+const GOAL_QUESTIONS: Record<Goal, {
+  targetQ: string;
+  targetPlaceholder: string;
+  currentQ: string;
+  currentPlaceholder: string;
+}> = {
+  quit_smoking: {
+    targetQ: "What does quitting smoking mean to you?",
+    targetPlaceholder: "e.g. Quit completely, or reduce to 5 cigarettes/day",
+    currentQ: "How many cigarettes do you smoke per day right now?",
+    currentPlaceholder: "e.g. 20 cigarettes/day",
+  },
+  drink_water: {
+    targetQ: "How many glasses of water per day do you want to reach?",
+    targetPlaceholder: "e.g. 8 glasses per day",
+    currentQ: "How many glasses are you drinking on an average day right now?",
+    currentPlaceholder: "e.g. 2 glasses",
+  },
+  stand_more: {
+    targetQ: "How many standing or movement breaks per day is your goal?",
+    targetPlaceholder: "e.g. 6 breaks of 5 minutes each",
+    currentQ: "How many times do you currently stand up and move during the day?",
+    currentPlaceholder: "e.g. 1–2 times",
+  },
+};
+
 export default function SetupPage() {
   const router = useRouter();
-  const [step, setStep] = useState<Step>("goal");
+  const [step, setStep]           = useState<Step>("goal");
   const [pendingGoal, setPendingGoal] = useState<Goal | null>(null);
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
-  const [hasAvatar, setHasAvatar] = useState(false);
+  const [goalTarget, setGoalTarget]   = useState("");
+  const [goalCurrent, setGoalCurrent] = useState("");
+  const [hasAvatar, setHasAvatar]     = useState(false);
 
   useEffect(() => {
     const voiceId  = localStorage.getItem("voiceId");
@@ -44,12 +72,16 @@ export default function SetupPage() {
   function confirmGoal() {
     if (!pendingGoal) return;
     setSelectedGoal(pendingGoal);
-    setStep("mode");
+    setGoalTarget("");
+    setGoalCurrent("");
+    setStep("goal_target");
   }
 
   function saveAndClearMemory(goal: Goal, mode: Mode) {
     localStorage.setItem("userGoal", goal);
     localStorage.setItem("userMode", mode);
+    localStorage.setItem("goalTarget", goalTarget.trim());
+    localStorage.setItem("goalCurrent", goalCurrent.trim());
     localStorage.removeItem("sessionMemory_digital_twin");
     localStorage.removeItem("sessionMemory_therapist");
   }
@@ -57,7 +89,7 @@ export default function SetupPage() {
   function handleModeSelect(mode: Mode) {
     if (mode === "therapist") {
       saveAndClearMemory(selectedGoal!, mode);
-      router.push("/");
+      router.push("/chat?mode=therapist");
     } else {
       if (hasAvatar) {
         setStep("avatar");
@@ -70,13 +102,16 @@ export default function SetupPage() {
 
   function handleKeepAvatar() {
     saveAndClearMemory(selectedGoal!, "digital_twin");
-    router.push("/");
+    router.push("/chat?mode=digital_twin");
   }
 
   function handleNewAvatar() {
     saveAndClearMemory(selectedGoal!, "digital_twin");
     router.push("/onboarding");
   }
+
+  const goalInfo = selectedGoal ? GOALS.find((g) => g.id === selectedGoal) : null;
+  const questions = selectedGoal ? GOAL_QUESTIONS[selectedGoal] : null;
 
   return (
     <main
@@ -136,6 +171,88 @@ export default function SetupPage() {
         </>
       )}
 
+      {/* ── Goal target question ────────────────────────────────────────── */}
+      {step === "goal_target" && goalInfo && questions && (
+        <>
+          <div className="space-y-3">
+            <div className="text-5xl">{goalInfo.icon}</div>
+            <h1 className="text-2xl font-black text-white">{questions.targetQ}</h1>
+            <p className="text-gray-400 text-sm max-w-sm">
+              This helps your coach set the right target for you.
+            </p>
+          </div>
+
+          <div className="w-full max-w-sm">
+            <input
+              type="text"
+              value={goalTarget}
+              onChange={(e) => setGoalTarget(e.target.value)}
+              placeholder={questions.targetPlaceholder}
+              className="w-full bg-gray-800 border border-gray-600 focus:border-[#6C63FF] rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none transition text-sm"
+              onKeyDown={(e) => e.key === "Enter" && goalTarget.trim() && setStep("goal_current")}
+              autoFocus
+            />
+          </div>
+
+          <button
+            onClick={() => setStep("goal_current")}
+            disabled={!goalTarget.trim()}
+            className={`w-full max-w-sm py-3 px-6 rounded-xl font-semibold text-white transition ${
+              goalTarget.trim()
+                ? "bg-[#6C63FF] hover:bg-[#5a52e0]"
+                : "bg-gray-700 text-gray-500 cursor-not-allowed"
+            }`}
+          >
+            Next →
+          </button>
+
+          <button onClick={() => setStep("goal")} className="text-gray-500 text-sm">
+            ← Back
+          </button>
+        </>
+      )}
+
+      {/* ── Goal current question ───────────────────────────────────────── */}
+      {step === "goal_current" && goalInfo && questions && (
+        <>
+          <div className="space-y-3">
+            <div className="text-5xl">{goalInfo.icon}</div>
+            <h1 className="text-2xl font-black text-white">{questions.currentQ}</h1>
+            <p className="text-gray-400 text-sm max-w-sm">
+              Your coach needs to know where you're starting from.
+            </p>
+          </div>
+
+          <div className="w-full max-w-sm">
+            <input
+              type="text"
+              value={goalCurrent}
+              onChange={(e) => setGoalCurrent(e.target.value)}
+              placeholder={questions.currentPlaceholder}
+              className="w-full bg-gray-800 border border-gray-600 focus:border-[#6C63FF] rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none transition text-sm"
+              onKeyDown={(e) => e.key === "Enter" && goalCurrent.trim() && setStep("mode")}
+              autoFocus
+            />
+          </div>
+
+          <button
+            onClick={() => setStep("mode")}
+            disabled={!goalCurrent.trim()}
+            className={`w-full max-w-sm py-3 px-6 rounded-xl font-semibold text-white transition ${
+              goalCurrent.trim()
+                ? "bg-[#6C63FF] hover:bg-[#5a52e0]"
+                : "bg-gray-700 text-gray-500 cursor-not-allowed"
+            }`}
+          >
+            Next →
+          </button>
+
+          <button onClick={() => setStep("goal_target")} className="text-gray-500 text-sm">
+            ← Back
+          </button>
+        </>
+      )}
+
       {/* ── Mode selection ─────────────────────────────────────────────── */}
       {step === "mode" && selectedGoal && (
         <>
@@ -186,7 +303,7 @@ export default function SetupPage() {
           </div>
 
           <button
-            onClick={() => setStep("goal")}
+            onClick={() => setStep("goal_current")}
             className="text-gray-500 text-sm transition"
           >
             ← Back

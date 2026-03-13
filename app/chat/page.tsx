@@ -22,6 +22,25 @@ const LANGUAGES: { code: Language; label: string; native: string; flag: string }
   { code: "he", label: "Hebrew",  native: "עברית",   flag: "🇮🇱" },
 ];
 
+function ConnectingLoader({ messages }: { messages: string[] }) {
+  const [idx, setIdx] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setIdx((i) => (i + 1) % messages.length), 2200);
+    return () => clearInterval(t);
+  }, [messages]);
+  return (
+    <div className="flex flex-col items-center gap-4 p-6 text-center">
+      <div className="text-4xl animate-bounce">
+        {["🧬", "⚡", "🎙️", "🤖", "✨"][idx % 5]}
+      </div>
+      <div className="w-10 h-10 border-4 border-[#6C63FF] border-t-transparent rounded-full animate-spin" />
+      <p className="text-gray-300 text-sm font-medium transition-all duration-500">
+        {messages[idx]}
+      </p>
+    </div>
+  );
+}
+
 function ChatPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -46,7 +65,20 @@ function ChatPageInner() {
   }, [mode]);
 
   const label = mode === "therapist" ? "Your Therapist" : "Your Digital Twin";
-  const connectingLabel = mode === "therapist" ? "Connecting to your therapist…" : "Waking up your avatar…";
+  const CONNECTING_MESSAGES = mode === "therapist"
+    ? [
+        "Your therapist is finishing their coffee… ☕",
+        "Warming up the empathy engine…",
+        "Booking your virtual couch…",
+        "Loading unconditional positive regard…",
+      ]
+    : [
+        "Waking up your digital twin… 🧬",
+        "Convincing your better self to show up…",
+        "Loading your inner voice…",
+        "Syncing your conscience… ⚡",
+        "Your avatar is doing warm-ups…",
+      ];
 
   async function startSession(lang: Language) {
     setState("connecting");
@@ -55,8 +87,10 @@ function ChatPageInner() {
     try {
       let params: URLSearchParams;
 
-      const memory = localStorage.getItem(memoryKey) ?? "";
-      const goal   = localStorage.getItem("userGoal") ?? "";
+      const memory       = localStorage.getItem(memoryKey) ?? "";
+      const goal         = localStorage.getItem("userGoal") ?? "";
+      const goalTarget   = localStorage.getItem("goalTarget") ?? "";
+      const goalCurrent  = localStorage.getItem("goalCurrent") ?? "";
 
       if (mode === "therapist") {
         params = new URLSearchParams({ mode: "therapist", language: lang });
@@ -72,8 +106,10 @@ function ChatPageInner() {
         params = new URLSearchParams({ mode: "digital_twin", voiceId, photoUrl, language: lang });
       }
 
-      if (memory) params.set("memory", memory);
-      if (goal)   params.set("goal", goal);
+      if (memory)       params.set("memory", memory);
+      if (goal)         params.set("goal", goal);
+      if (goalTarget)   params.set("goalTarget", goalTarget);
+      if (goalCurrent)  params.set("goalCurrent", goalCurrent);
 
       const res = await fetch(`/api/livekit/connection-details?${params}`);
       if (!res.ok) throw new Error("Could not get connection details");
@@ -258,10 +294,7 @@ function ChatPageInner() {
         />
 
         {(state === "idle" || state === "connecting") && (
-          <div className="flex flex-col items-center gap-3">
-            <div className="w-10 h-10 border-4 border-[#6C63FF] border-t-transparent rounded-full animate-spin" />
-            <p className="text-gray-400 text-sm">{connectingLabel}</p>
-          </div>
+          <ConnectingLoader messages={CONNECTING_MESSAGES} />
         )}
 
         {state === "error" && (

@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import PhotoCapture from "@/components/PhotoCapture";
+import AvatarStyler from "@/components/AvatarStyler";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import { useRouter } from "next/navigation";
 
-type Step = "photo" | "voice" | "processing" | "done";
+type Step = "photo" | "stylize" | "voice" | "processing" | "done";
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -18,7 +19,7 @@ export default function OnboardingPage() {
 
   function handlePhotoReady(blob: Blob) {
     setPhotoBlob(blob);
-    setStep("voice");
+    setStep("stylize");
   }
 
   async function handleSubmit() {
@@ -64,25 +65,37 @@ export default function OnboardingPage() {
 
   return (
     <main className="flex flex-col items-center min-h-screen px-4 pt-8 pb-4 gap-4">
-      {/* Progress indicators */}
+      {/* Progress indicators — 3 visible steps: Photo/Style · Voice · Done */}
       <div className="flex gap-2 items-center">
-        {(["photo", "voice", "processing"] as const).map((s, i) => (
-          <div key={s} className="flex items-center gap-2">
-            <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
-                step === s
-                  ? "bg-[#6C63FF] text-white"
-                  : ["processing", "done"].includes(step) ||
-                    (step === "voice" && i === 0)
-                  ? "bg-green-600 text-white"
-                  : "bg-gray-700 text-gray-400"
-              }`}
-            >
-              {i + 1}
+        {([
+          { key: "photo",      label: "1" },
+          { key: "voice",      label: "2" },
+          { key: "processing", label: "3" },
+        ] as const).map(({ key, label }, i) => {
+          const stepOrder = ["photo", "stylize", "voice", "processing", "done"];
+          const currentIdx = stepOrder.indexOf(step);
+          const thisIdx    = stepOrder.indexOf(key);
+          const active     = key === "photo"
+            ? step === "photo" || step === "stylize"
+            : step === key;
+          const done       = currentIdx > thisIdx;
+          return (
+            <div key={key} className="flex items-center gap-2">
+              <div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
+                  active
+                    ? "bg-[#6C63FF] text-white"
+                    : done
+                    ? "bg-green-600 text-white"
+                    : "bg-gray-700 text-gray-400"
+                }`}
+              >
+                {label}
+              </div>
+              {i < 2 && <div className="w-8 h-px bg-gray-600" />}
             </div>
-            {i < 2 && <div className="w-8 h-px bg-gray-600" />}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* ── Step 1: Photo ── */}
@@ -94,6 +107,27 @@ export default function OnboardingPage() {
             Make sure your face is clearly visible with good lighting.
           </p>
           <PhotoCapture onCapture={handlePhotoReady} />
+        </div>
+      )}
+
+      {/* ── Step 1b: Stylize ── */}
+      {step === "stylize" && photoBlob && (
+        <div className="w-full max-w-md space-y-4 text-center">
+          <h2 className="text-2xl font-bold">Your Avatar Style</h2>
+          <p className="text-gray-400 text-sm">
+            We're giving your avatar those iconic digital eyes and a vivid, animated look.
+          </p>
+          <AvatarStyler
+            originalBlob={photoBlob}
+            onAccept={(styledBlob) => {
+              setPhotoBlob(styledBlob);
+              setStep("voice");
+            }}
+            onRetake={() => {
+              setPhotoBlob(null);
+              setStep("photo");
+            }}
+          />
         </div>
       )}
 

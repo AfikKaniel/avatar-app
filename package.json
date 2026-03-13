@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",
+    "@mediapipe/tasks-vision": "^0.10.32",
     "@vercel/blob": "^2.3.1",
     "livekit-client": "^2.5.8",
     "livekit-server-sdk": "^2.15.0",

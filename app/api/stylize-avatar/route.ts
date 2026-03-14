@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   );
   body.append("mode", "image-to-image");
   body.append("model", "sd3-turbo");
-  body.append("strength", "0.25");
+  body.append("strength", "0.35");
   body.append("output_format", "jpeg");
 
   let res: Response;

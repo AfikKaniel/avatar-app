@@ -208,61 +208,61 @@ function avg(lms: LM[], indices: number[], axis: "x" | "y"): number {
 
 function applyStyle(img: HTMLImageElement, iris: IrisPoints | null): Promise<Blob> {
   return new Promise((resolve, reject) => {
+    const W = img.naturalWidth;
+    const H = img.naturalHeight;
     const canvas = document.createElement("canvas");
-    canvas.width  = img.naturalWidth;
-    canvas.height = img.naturalHeight;
-    const ctx = canvas.getContext("2d");
+    canvas.width  = W;
+    canvas.height = H;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
     if (!ctx) { reject(new Error("No canvas context")); return; }
 
-    // ── 1. Vivid illustrated base ─────────────────────────────────────────
-    ctx.filter = "saturate(280%) contrast(145%) brightness(108%)";
-    ctx.globalAlpha = 1.0;
+    // ── 1. Draw and extract pixels (lossless) ─────────────────────────────
     ctx.drawImage(img, 0, 0);
-    ctx.globalAlpha = 1.0;
-    ctx.filter = "none";
+    const imageData = ctx.getImageData(0, 0, W, H);
+    const d = imageData.data;
 
-    // ── 2. Overlay — crushes tones into discrete cel-shaded bands ─────────
-    ctx.save();
-    ctx.globalCompositeOperation = "overlay";
-    ctx.filter = "contrast(300%) brightness(85%) saturate(200%)";
-    ctx.globalAlpha = 0.48;
-    ctx.drawImage(img, 0, 0);
-    ctx.restore();
-    ctx.filter = "none";
+    // ── 2. Per-pixel: saturate + posterize + contrast curve ───────────────
+    //   Posterization = snapping lightness to N discrete bands = flat cel-shading
+    const LEVELS = 7;
+    const step = 1 / LEVELS;
 
-    // ── 3. Deep multiply shadows — hard dark areas ────────────────────────
-    ctx.save();
-    ctx.globalCompositeOperation = "multiply";
-    ctx.filter = "contrast(200%) brightness(40%) saturate(150%)";
-    ctx.globalAlpha = 0.42;
-    ctx.drawImage(img, 0, 0);
-    ctx.restore();
-    ctx.filter = "none";
+    for (let i = 0; i < d.length; i += 4) {
+      const [h, s, l] = rgbToHsl(d[i] / 255, d[i + 1] / 255, d[i + 2] / 255);
 
-    // ── 4. Digital bloom / color halation ────────────────────────────────
+      // Boost saturation
+      const sNew = Math.min(1, s * 2.2);
+
+      // Posterize lightness → discrete tonal bands
+      const lPost = Math.round(l / step) * step;
+
+      // S-curve: push lights up, darks down for harder transitions
+      const lFinal = lPost < 0.5
+        ? lPost * lPost * 2
+        : 1 - Math.pow(1 - lPost, 2) * 2;
+
+      const [r, g, b] = hslToRgb(h, sNew, Math.max(0, Math.min(1, lFinal)));
+      d[i]     = r * 255;
+      d[i + 1] = g * 255;
+      d[i + 2] = b * 255;
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+
+    // ── 3. Soft bloom — adds the digital glow feel ────────────────────────
     ctx.save();
     ctx.globalCompositeOperation = "screen";
-    ctx.filter = "blur(18px) saturate(250%)";
-    ctx.globalAlpha = 0.28;
-    ctx.drawImage(img, 0, 0);
-    ctx.restore();
-    ctx.filter = "none";
-
-    // ── 5. Saturation punch — vivid color pop ────────────────────────────
-    ctx.save();
-    ctx.globalCompositeOperation = "overlay";
-    ctx.filter = "saturate(350%) contrast(130%)";
+    ctx.filter = "blur(14px) saturate(180%)";
     ctx.globalAlpha = 0.18;
     ctx.drawImage(img, 0, 0);
     ctx.restore();
     ctx.filter = "none";
 
-    // ── 6. Blue iris — two passes for intense digital-eye look ───────────
+    // ── 4. Blue iris ──────────────────────────────────────────────────────
     if (iris) {
       for (const eye of [iris.left, iris.right]) {
         const { x, y, r } = eye;
 
-        // Pass A: "color" blend — replaces hue with blue, keeps luminosity/texture
+        // Hue replacement — keeps texture, shifts color to blue
         ctx.save();
         ctx.globalCompositeOperation = "color";
         ctx.globalAlpha = 0.97;
@@ -276,7 +276,7 @@ function applyStyle(img: HTMLImageElement, iris: IrisPoints | null): Promise<Blo
         ctx.fill();
         ctx.restore();
 
-        // Pass B: "screen" — bright-blue luminance pop + digital shine
+        // Luminance pop — bright digital shine
         ctx.save();
         ctx.globalCompositeOperation = "screen";
         ctx.globalAlpha = 0.55;
@@ -290,10 +290,10 @@ function applyStyle(img: HTMLImageElement, iris: IrisPoints | null): Promise<Blo
         ctx.fill();
         ctx.restore();
 
-        // Pass C: darken pupil center for depth
+        // Pupil depth
         ctx.save();
         ctx.globalCompositeOperation = "multiply";
-        ctx.globalAlpha = 0.70;
+        ctx.globalAlpha = 0.75;
         const gp = ctx.createRadialGradient(x, y, 0, x, y, r * 0.32);
         gp.addColorStop(0,   "rgba(0, 0, 10, 1)");
         gp.addColorStop(0.6, "rgba(0, 0, 20, 0.8)");
@@ -306,20 +306,50 @@ function applyStyle(img: HTMLImageElement, iris: IrisPoints | null): Promise<Blo
       }
     }
 
-    // ── 7. Cinematic vignette ─────────────────────────────────────────────
+    // ── 5. Vignette ───────────────────────────────────────────────────────
     const vg = ctx.createRadialGradient(
-      canvas.width / 2, canvas.height / 2, canvas.height * 0.22,
-      canvas.width / 2, canvas.height / 2, canvas.height * 0.82
+      W / 2, H / 2, H * 0.22,
+      W / 2, H / 2, H * 0.82
     );
     vg.addColorStop(0, "rgba(0,0,0,0)");
-    vg.addColorStop(1, "rgba(0,0,0,0.45)");
+    vg.addColorStop(1, "rgba(0,0,0,0.40)");
     ctx.fillStyle = vg;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, W, H);
 
     canvas.toBlob(
       (blob) => (blob ? resolve(blob) : reject(new Error("toBlob failed"))),
       "image/jpeg",
-      0.93
+      0.95
     );
   });
+}
+
+// ── Color space helpers ───────────────────────────────────────────────────────
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  if (max === min) return [0, 0, l];
+  const d = max - min;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h = 0;
+  if      (max === r) h = (g - b) / d + (g < b ? 6 : 0);
+  else if (max === g) h = (b - r) / d + 2;
+  else                h = (r - g) / d + 4;
+  return [h / 6, s, l];
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  if (s === 0) return [l, l, l];
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  const hue = (t: number) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p + (q - p) * 6 * t;
+    if (t < 1 / 2) return q;
+    if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+    return p;
+  };
+  return [hue(h + 1 / 3), hue(h), hue(h - 1 / 3)];
 }

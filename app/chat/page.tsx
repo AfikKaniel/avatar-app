@@ -54,32 +54,25 @@ function ChatPageInner() {
   const [state, setState]         = useState<SessionState>("language");
   const [language, setLanguage]   = useState<Language | null>(null);
   const [errorMsg, setErrorMsg]   = useState("");
-  const [micOn, setMicOn]         = useState(true);
-  const [avatarPhoto, setAvatarPhoto] = useState<string>("");
-  const [videoReady, setVideoReady]   = useState(false);
+  const [micOn, setMicOn]           = useState(true);
+  const [videoReady, setVideoReady] = useState(false);
 
   const memoryKey = `sessionMemory_${mode}`;
   const isEndingRef = useRef(false);
 
-  useEffect(() => {
-    if (mode === "digital_twin") {
-      setAvatarPhoto(localStorage.getItem("photoUrl") ?? "");
-    }
-  }, [mode]);
-
   const label = mode === "therapist" ? "Your Therapist" : "Your Digital Twin";
   const CONNECTING_MESSAGES = mode === "therapist"
     ? [
-        "Your therapist is finishing their coffee… ☕",
+        "Your therapist is getting ready…",
         "Warming up the empathy engine…",
         "Booking your virtual couch…",
         "Loading unconditional positive regard…",
       ]
     : [
-        "Waking up your digital twin… 🧬",
+        "Waking up your digital twin…",
         "Convincing your better self to show up…",
         "Loading your inner voice…",
-        "Syncing your conscience… ⚡",
+        "Syncing your conscience…",
         "Your avatar is doing warm-ups…",
       ];
 
@@ -308,12 +301,7 @@ function ChatPageInner() {
 
       <div
         className="relative bg-gray-900 rounded-2xl overflow-hidden flex-1 flex items-center justify-center"
-        style={{
-          maxHeight: "75vh",
-          backgroundImage: state === "ready" && videoReady && avatarPhoto ? `url(${avatarPhoto})` : undefined,
-          backgroundSize: "cover",
-          backgroundPosition: "center",
-        }}
+        style={{ maxHeight: "75vh" }}
       >
         <video
           ref={videoRef}

@@ -31,7 +31,7 @@ export default function AvatarStyler({ originalBlob, onAccept, onRetake }: Props
         form.append("photo", originalBlob, "photo.jpg");
 
         const res = await fetch("/api/stylize-avatar", { method: "POST", body: form });
-        if (!res.ok) throw new Error("Stylization failed — try retaking your photo.");
+        if (!res.ok) throw new Error("Enhancement unavailable — you can still proceed with your original photo.");
 
         const blob = await res.blob();
         if (!cancelled) {

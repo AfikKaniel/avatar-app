@@ -188,6 +188,7 @@ function ChatPageInner() {
     roomRef.current = null;
 
     const transcript = transcriptRef.current;
+    let summary = "";
     if (transcript.length > 0) {
       try {
         const previousMemory = localStorage.getItem(memoryKey) ?? "";
@@ -197,13 +198,28 @@ function ChatPageInner() {
           body: JSON.stringify({ transcript, mode, previousMemory }),
         });
         if (res.ok) {
-          const { summary } = await res.json();
+          const data = await res.json();
+          summary = data.summary ?? "";
           if (summary) localStorage.setItem(memoryKey, summary);
         }
       } catch {
         // Memory save failed silently — don't block navigation
       }
     }
+
+    // Log session to database (fire-and-forget)
+    fetch("/api/log-session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mode,
+        language: language ?? "en",
+        goal: localStorage.getItem("userGoal") ?? "",
+        goalTarget: localStorage.getItem("goalTarget") ?? "",
+        goalCurrent: localStorage.getItem("goalCurrent") ?? "",
+        summary,
+      }),
+    }).catch(() => {});
 
     router.push("/");
   }

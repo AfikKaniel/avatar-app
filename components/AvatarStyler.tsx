@@ -31,6 +31,7 @@ export default function AvatarStyler({ originalBlob, onAccept, onRetake }: Props
         const form = new FormData();
         form.append("photo", originalBlob, "photo.jpg");
         const res = await fetch("/api/stylize-avatar", { method: "POST", body: form });
+        console.log("[stylize-avatar] status:", res.status, "X-Stylize-Status:", res.headers.get("X-Stylize-Status"));
         if (!res.ok) throw new Error("Enhancement unavailable.");
         const aiBlob = await res.blob();
 

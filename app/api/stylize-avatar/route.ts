@@ -5,10 +5,7 @@ export const maxDuration = 60; // Stability AI can take up to ~30s
 /**
  * POST /api/stylize-avatar
  * Body: multipart/form-data with `photo` file
- * Returns: JPEG image bytes
- *
- * Calls Stability AI SD3-Turbo img2img to transform the user's photo
- * into a professional digital avatar portrait.
+ * Returns: JPEG image bytes + X-Stylize-Status header for debugging
  */
 export async function POST(req: NextRequest) {
   const apiKey = process.env.STABILITY_API_KEY;
@@ -19,11 +16,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "photo is required" }, { status: 400 });
   }
 
-  // No API key → pass the original photo through unchanged so onboarding never breaks
+  function originalResponse(reason: string) {
+    console.warn(`[stylize-avatar] fallback(${reason})`);
+    return photo!.arrayBuffer().then((ab) => {
+      const buffer = Buffer.from(ab);
+      return new NextResponse(buffer, {
+        headers: {
+          "Content-Type": photo!.type || "image/jpeg",
+          "X-Stylize-Status": `fallback:${reason}`,
+        },
+      });
+    });
+  }
+
   if (!apiKey) {
-    console.warn("[stylize-avatar] STABILITY_API_KEY not set — returning original photo");
-    const buffer = Buffer.from(await photo.arrayBuffer());
-    return new NextResponse(buffer, { headers: { "Content-Type": photo.type || "image/jpeg" } });
+    return originalResponse("no-key");
   }
 
   const body = new FormData();
@@ -50,25 +57,26 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     console.error("[stylize-avatar] Network error:", err);
-    // Fallback: return original
-    const buffer = Buffer.from(await photo.arrayBuffer());
-    return new NextResponse(buffer, { headers: { "Content-Type": photo.type || "image/jpeg" } });
+    return originalResponse(`network-error:${String(err).slice(0, 80)}`);
   }
 
   if (!res.ok) {
     const errText = await res.text();
     console.error(`[stylize-avatar] Stability AI ${res.status}:`, errText);
-    // Fallback: return original so the user isn't stuck
-    const buffer = Buffer.from(await photo.arrayBuffer());
-    return new NextResponse(buffer, { headers: { "Content-Type": photo.type || "image/jpeg" } });
+    return originalResponse(`api-${res.status}`);
   }
 
   const data = await res.json();
   if (!data.image) {
-    const buffer = Buffer.from(await photo.arrayBuffer());
-    return new NextResponse(buffer, { headers: { "Content-Type": photo.type || "image/jpeg" } });
+    console.error("[stylize-avatar] No image in response:", JSON.stringify(data).slice(0, 200));
+    return originalResponse("no-image-field");
   }
 
   const buffer = Buffer.from(data.image, "base64");
-  return new NextResponse(buffer, { headers: { "Content-Type": "image/jpeg" } });
+  return new NextResponse(buffer, {
+    headers: {
+      "Content-Type": "image/jpeg",
+      "X-Stylize-Status": "success",
+    },
+  });
 }

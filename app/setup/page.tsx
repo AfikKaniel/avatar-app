@@ -306,32 +306,26 @@ export default function SetupPage() {
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-xl">
             <button
               onClick={() => handleModeSelect("digital_twin")}
-              className="flex-1 flex flex-col gap-3 text-left rounded-2xl border border-[#6C63FF]/40 bg-[#6C63FF]/5 active:bg-[#6C63FF]/15 p-6 transition group"
+              className="flex-1 flex flex-col gap-3 text-left rounded-2xl border border-[#6C63FF]/40 bg-[#6C63FF]/5 active:bg-[#6C63FF]/15 p-6 transition"
             >
-              <p className="text-xs font-semibold uppercase tracking-widest text-[#a09cf0]">
-                Digital Twin
-              </p>
-              <h2 className="text-lg font-bold text-white">Talk to yourself</h2>
+              <h2 className="text-lg font-bold text-white">Talk to your Avatar</h2>
               <p className="text-gray-400 text-sm">
-                Speak with an AI version of you — your face, your voice, your perspective.
+                Your face, your voice — an AI version of you.
               </p>
               <span className="mt-auto text-[#6C63FF] text-sm font-semibold">
-                {hasAvatar ? "Use my avatar →" : "Set up my avatar →"}
+                Start now →
               </span>
             </button>
 
             <button
               onClick={() => handleModeSelect("therapist")}
-              className="flex-1 flex flex-col gap-3 text-left rounded-2xl border border-gray-600 bg-white/3 active:bg-white/5 p-6 transition"
+              className="flex-1 flex flex-col gap-3 text-left rounded-2xl border border-[#6C63FF]/40 bg-[#6C63FF]/5 active:bg-[#6C63FF]/15 p-6 transition"
             >
-              <p className="text-xs font-semibold uppercase tracking-widest text-gray-400">
-                AI Therapist
-              </p>
-              <h2 className="text-lg font-bold text-white">Talk to a therapist</h2>
+              <h2 className="text-lg font-bold text-white">Talk to a Therapist</h2>
               <p className="text-gray-400 text-sm">
-                A warm, professional AI therapist — no setup needed, start immediately.
+                A professional AI coach — no setup needed.
               </p>
-              <span className="mt-auto text-gray-300 text-sm font-semibold">
+              <span className="mt-auto text-[#6C63FF] text-sm font-semibold">
                 Start now →
               </span>
             </button>

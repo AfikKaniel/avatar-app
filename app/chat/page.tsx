@@ -22,19 +22,20 @@ const LANGUAGES: { code: Language; label: string; native: string; flag: string }
   { code: "he", label: "Hebrew",  native: "עברית",   flag: "🇮🇱" },
 ];
 
-function ConnectingLoader({ messages }: { messages: string[] }) {
+function ConnectingLoader({ messages, mode }: { messages: string[]; mode: Mode }) {
   const [idx, setIdx] = useState(0);
   useEffect(() => {
-    const t = setInterval(() => setIdx((i) => (i + 1) % messages.length), 2200);
+    const t = setInterval(() => setIdx((i) => (i + 1) % messages.length), 2600);
     return () => clearInterval(t);
   }, [messages]);
+
+  const icon = mode === "therapist" ? "🛋️" : "🧬";
+
   return (
-    <div className="flex flex-col items-center gap-4 p-6 text-center">
-      <div className="text-4xl animate-bounce">
-        {["🧬", "⚡", "🎙️", "🤖", "✨"][idx % 5]}
-      </div>
-      <div className="w-10 h-10 border-4 border-[#6C63FF] border-t-transparent rounded-full animate-spin" />
-      <p className="text-gray-300 text-sm font-medium transition-all duration-500">
+    <div className="flex flex-col items-center justify-center gap-6 w-full h-full py-12">
+      <span className="text-5xl select-none">{icon}</span>
+      <div className="w-12 h-12 border-[3px] border-[#6C63FF] border-t-transparent rounded-full animate-spin" />
+      <p key={idx} className="text-white font-black text-xl tracking-tight text-center px-8 max-w-xs leading-snug">
         {messages[idx]}
       </p>
     </div>
@@ -50,11 +51,12 @@ function ChatPageInner() {
   const roomRef        = useRef<Room | null>(null);
   const transcriptRef  = useRef<{ speaker: string; text: string }[]>([]);
   const audioElemsRef  = useRef<Map<string, HTMLAudioElement>>(new Map());
-  const [state, setState]       = useState<SessionState>("language");
-  const [language, setLanguage] = useState<Language | null>(null);
-  const [errorMsg, setErrorMsg] = useState("");
-  const [micOn, setMicOn]       = useState(true);
+  const [state, setState]         = useState<SessionState>("language");
+  const [language, setLanguage]   = useState<Language | null>(null);
+  const [errorMsg, setErrorMsg]   = useState("");
+  const [micOn, setMicOn]         = useState(true);
   const [avatarPhoto, setAvatarPhoto] = useState<string>("");
+  const [videoReady, setVideoReady]   = useState(false);
 
   const memoryKey = `sessionMemory_${mode}`;
   const isEndingRef = useRef(false);
@@ -83,6 +85,7 @@ function ChatPageInner() {
 
   async function startSession(lang: Language) {
     setState("connecting");
+    setVideoReady(false);
     transcriptRef.current = [];
 
     try {
@@ -140,6 +143,7 @@ function ChatPageInner() {
         ) => {
           if (track.kind === Track.Kind.Video && videoRef.current) {
             track.attach(videoRef.current);
+            videoRef.current.onloadeddata = () => setVideoReady(true);
           }
           if (track.kind === Track.Kind.Audio) {
             const audioEl = track.attach() as HTMLAudioElement;
@@ -292,7 +296,7 @@ function ChatPageInner() {
             </span>
           )}
         </div>
-        {state === "ready" && (
+        {state === "ready" && videoReady && (
           <button
             onClick={endSession}
             className="text-sm text-gray-400 hover:text-gray-200 transition"
@@ -306,7 +310,7 @@ function ChatPageInner() {
         className="relative bg-gray-900 rounded-2xl overflow-hidden flex-1 flex items-center justify-center"
         style={{
           maxHeight: "75vh",
-          backgroundImage: state === "ready" && avatarPhoto ? `url(${avatarPhoto})` : undefined,
+          backgroundImage: state === "ready" && videoReady && avatarPhoto ? `url(${avatarPhoto})` : undefined,
           backgroundSize: "cover",
           backgroundPosition: "center",
         }}
@@ -316,11 +320,11 @@ function ChatPageInner() {
           autoPlay
           playsInline
           className="w-full h-full object-cover"
-          style={{ display: state === "ready" ? "block" : "none" }}
+          style={{ display: state === "ready" && videoReady ? "block" : "none" }}
         />
 
-        {(state === "idle" || state === "connecting") && (
-          <ConnectingLoader messages={CONNECTING_MESSAGES} />
+        {(state === "idle" || state === "connecting" || (state === "ready" && !videoReady)) && (
+          <ConnectingLoader messages={CONNECTING_MESSAGES} mode={mode} />
         )}
 
         {state === "error" && (
@@ -335,7 +339,7 @@ function ChatPageInner() {
           </div>
         )}
 
-        {state === "ready" && (
+        {state === "ready" && videoReady && (
           <div className="absolute bottom-3 left-3 flex items-center gap-2 bg-black/60 rounded-full px-3 py-1">
             <span
               className={`w-2 h-2 rounded-full ${
@@ -349,7 +353,7 @@ function ChatPageInner() {
         )}
       </div>
 
-      {state === "ready" && (
+      {state === "ready" && videoReady && (
         <div className="flex justify-center gap-3">
           <button
             onClick={toggleMic}

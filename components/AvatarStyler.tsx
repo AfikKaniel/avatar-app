@@ -214,39 +214,50 @@ function applyStyle(img: HTMLImageElement, iris: IrisPoints | null): Promise<Blo
     const ctx = canvas.getContext("2d");
     if (!ctx) { reject(new Error("No canvas context")); return; }
 
-    // ── 1. Skin-smoothing soft base ───────────────────────────────────────
-    ctx.filter = "blur(1.5px) brightness(101%)";
-    ctx.globalAlpha = 0.30;
+    // ── 1. Vivid illustrated base ─────────────────────────────────────────
+    ctx.filter = "saturate(280%) contrast(145%) brightness(108%)";
+    ctx.globalAlpha = 1.0;
     ctx.drawImage(img, 0, 0);
     ctx.globalAlpha = 1.0;
     ctx.filter = "none";
 
-    // ── 2. Vivid animated pass — push toward illustrated/cel-shaded ───────
-    ctx.filter = "saturate(230%) contrast(130%) brightness(107%)";
-    ctx.globalAlpha = 0.90;
+    // ── 2. Overlay — crushes tones into discrete cel-shaded bands ─────────
+    ctx.save();
+    ctx.globalCompositeOperation = "overlay";
+    ctx.filter = "contrast(300%) brightness(85%) saturate(200%)";
+    ctx.globalAlpha = 0.48;
     ctx.drawImage(img, 0, 0);
-    ctx.globalAlpha = 1.0;
+    ctx.restore();
     ctx.filter = "none";
 
-    // ── 3. Multiply shadow pass — deepens darks for cel-shading feel ──────
+    // ── 3. Deep multiply shadows — hard dark areas ────────────────────────
     ctx.save();
     ctx.globalCompositeOperation = "multiply";
-    ctx.filter = "saturate(120%) contrast(180%) brightness(60%)";
-    ctx.globalAlpha = 0.22;
+    ctx.filter = "contrast(200%) brightness(40%) saturate(150%)";
+    ctx.globalAlpha = 0.42;
     ctx.drawImage(img, 0, 0);
     ctx.restore();
     ctx.filter = "none";
 
-    // ── 4. Color bloom / digital halation glow ────────────────────────────
+    // ── 4. Digital bloom / color halation ────────────────────────────────
     ctx.save();
-    ctx.filter = "blur(12px) saturate(180%)";
     ctx.globalCompositeOperation = "screen";
-    ctx.globalAlpha = 0.20;
+    ctx.filter = "blur(18px) saturate(250%)";
+    ctx.globalAlpha = 0.28;
     ctx.drawImage(img, 0, 0);
     ctx.restore();
     ctx.filter = "none";
 
-    // ── 5. Blue iris — two passes for intense digital-eye look ───────────
+    // ── 5. Saturation punch — vivid color pop ────────────────────────────
+    ctx.save();
+    ctx.globalCompositeOperation = "overlay";
+    ctx.filter = "saturate(350%) contrast(130%)";
+    ctx.globalAlpha = 0.18;
+    ctx.drawImage(img, 0, 0);
+    ctx.restore();
+    ctx.filter = "none";
+
+    // ── 6. Blue iris — two passes for intense digital-eye look ───────────
     if (iris) {
       for (const eye of [iris.left, iris.right]) {
         const { x, y, r } = eye;
@@ -254,7 +265,7 @@ function applyStyle(img: HTMLImageElement, iris: IrisPoints | null): Promise<Blo
         // Pass A: "color" blend — replaces hue with blue, keeps luminosity/texture
         ctx.save();
         ctx.globalCompositeOperation = "color";
-        ctx.globalAlpha = 0.92;
+        ctx.globalAlpha = 0.97;
         const gc = ctx.createRadialGradient(x, y, 0, x, y, r);
         gc.addColorStop(0,    "rgba(0, 145, 255, 1)");
         gc.addColorStop(0.55, "rgba(5, 115, 245, 1)");
@@ -268,26 +279,40 @@ function applyStyle(img: HTMLImageElement, iris: IrisPoints | null): Promise<Blo
         // Pass B: "screen" — bright-blue luminance pop + digital shine
         ctx.save();
         ctx.globalCompositeOperation = "screen";
-        ctx.globalAlpha = 0.45;
-        const gs = ctx.createRadialGradient(x, y, 0, x, y, r * 0.60);
-        gs.addColorStop(0,   "rgba(130, 210, 255, 0.80)");
-        gs.addColorStop(0.45,"rgba(70, 170, 255, 0.40)");
-        gs.addColorStop(1,   "rgba(30, 130, 245, 0)");
+        ctx.globalAlpha = 0.55;
+        const gs = ctx.createRadialGradient(x, y, 0, x, y, r * 0.65);
+        gs.addColorStop(0,    "rgba(160, 225, 255, 0.90)");
+        gs.addColorStop(0.45, "rgba(80, 180, 255, 0.50)");
+        gs.addColorStop(1,    "rgba(30, 130, 245, 0)");
         ctx.fillStyle = gs;
         ctx.beginPath();
-        ctx.ellipse(x, y, r * 0.68, r * 0.60, 0, 0, Math.PI * 2);
+        ctx.ellipse(x, y, r * 0.75, r * 0.65, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Pass C: darken pupil center for depth
+        ctx.save();
+        ctx.globalCompositeOperation = "multiply";
+        ctx.globalAlpha = 0.70;
+        const gp = ctx.createRadialGradient(x, y, 0, x, y, r * 0.32);
+        gp.addColorStop(0,   "rgba(0, 0, 10, 1)");
+        gp.addColorStop(0.6, "rgba(0, 0, 20, 0.8)");
+        gp.addColorStop(1,   "rgba(0, 0, 30, 0)");
+        ctx.fillStyle = gp;
+        ctx.beginPath();
+        ctx.ellipse(x, y, r * 0.32, r * 0.30, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }
     }
 
-    // ── 6. Cinematic vignette ─────────────────────────────────────────────
+    // ── 7. Cinematic vignette ─────────────────────────────────────────────
     const vg = ctx.createRadialGradient(
-      canvas.width / 2, canvas.height / 2, canvas.height * 0.25,
-      canvas.width / 2, canvas.height / 2, canvas.height * 0.80
+      canvas.width / 2, canvas.height / 2, canvas.height * 0.22,
+      canvas.width / 2, canvas.height / 2, canvas.height * 0.82
     );
     vg.addColorStop(0, "rgba(0,0,0,0)");
-    vg.addColorStop(1, "rgba(0,0,0,0.32)");
+    vg.addColorStop(1, "rgba(0,0,0,0.45)");
     ctx.fillStyle = vg;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 

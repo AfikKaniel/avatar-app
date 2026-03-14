@@ -46,9 +46,10 @@ function ChatPageInner() {
   const router = useRouter();
   const mode = (searchParams.get("mode") ?? "digital_twin") as Mode;
 
-  const videoRef      = useRef<HTMLVideoElement>(null);
-  const roomRef       = useRef<Room | null>(null);
-  const transcriptRef = useRef<{ speaker: string; text: string }[]>([]);
+  const videoRef       = useRef<HTMLVideoElement>(null);
+  const roomRef        = useRef<Room | null>(null);
+  const transcriptRef  = useRef<{ speaker: string; text: string }[]>([]);
+  const audioElemsRef  = useRef<Map<string, HTMLAudioElement>>(new Map());
   const [state, setState]       = useState<SessionState>("language");
   const [language, setLanguage] = useState<Language | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
@@ -144,6 +145,7 @@ function ChatPageInner() {
             const audioEl = track.attach() as HTMLAudioElement;
             audioEl.play().catch(() => {});
             document.body.appendChild(audioEl);
+            if (track.sid) audioElemsRef.current.set(track.sid, audioEl);
           }
         }
       );
@@ -153,6 +155,13 @@ function ChatPageInner() {
         // between avatar utterances. Video is cleaned up explicitly in endSession.
         if (track.kind === Track.Kind.Audio) {
           track.detach();
+          if (track.sid) {
+            const el = audioElemsRef.current.get(track.sid);
+            if (el) {
+              el.remove();
+              audioElemsRef.current.delete(track.sid);
+            }
+          }
         }
       });
 
@@ -182,7 +191,8 @@ function ChatPageInner() {
 
   async function endSession() {
     isEndingRef.current = true;
-    document.querySelectorAll("audio").forEach((el) => el.remove());
+    audioElemsRef.current.forEach((el) => el.remove());
+    audioElemsRef.current.clear();
     if (videoRef.current) videoRef.current.srcObject = null;
     await roomRef.current?.disconnect();
     roomRef.current = null;
@@ -250,10 +260,10 @@ function ChatPageInner() {
                 setLanguage(lang.code);
                 startSession(lang.code);
               }}
-              className="flex flex-col items-center gap-3 w-40 py-6 rounded-2xl border border-[#6C63FF]/40 bg-[#6C63FF]/5 hover:bg-[#6C63FF]/15 hover:border-[#6C63FF]/70 transition group"
+              className="flex flex-col items-center gap-3 w-40 py-6 rounded-2xl border border-gray-600 bg-white/5 active:bg-white/10 transition"
             >
               <span className="text-5xl">{lang.flag}</span>
-              <span className="text-white font-semibold text-sm group-hover:text-[#a09cf0] transition">
+              <span className="text-white font-semibold text-sm">
                 {lang.native}
               </span>
             </button>
@@ -296,7 +306,7 @@ function ChatPageInner() {
         className="relative bg-gray-900 rounded-2xl overflow-hidden flex-1 flex items-center justify-center"
         style={{
           maxHeight: "75vh",
-          backgroundImage: avatarPhoto ? `url(${avatarPhoto})` : undefined,
+          backgroundImage: state === "ready" && avatarPhoto ? `url(${avatarPhoto})` : undefined,
           backgroundSize: "cover",
           backgroundPosition: "center",
         }}

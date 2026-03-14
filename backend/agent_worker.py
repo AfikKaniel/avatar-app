@@ -210,8 +210,8 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
 
     session = AgentSession(
         vad=silero.VAD.load(
-            activation_threshold=0.65,
-            min_silence_duration=0.55,
+            activation_threshold=0.82,
+            min_silence_duration=0.9,
         ),
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
@@ -272,8 +272,8 @@ async def run_therapist_session(ctx: JobContext, language: str = "en", memory: s
 
     session = AgentSession(
         vad=silero.VAD.load(
-            activation_threshold=0.65,
-            min_silence_duration=0.55,
+            activation_threshold=0.82,
+            min_silence_duration=0.9,
         ),
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),

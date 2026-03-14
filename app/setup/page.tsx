@@ -30,27 +30,58 @@ const GOALS: { id: Goal; icon: string; label: string; description: string }[] = 
 
 const GOAL_QUESTIONS: Record<Goal, {
   targetQ: string;
-  targetPlaceholder: string;
+  targetOptions: string[];
   currentQ: string;
-  currentPlaceholder: string;
+  currentOptions: string[];
 }> = {
   quit_smoking: {
     targetQ: "What does quitting smoking mean to you?",
-    targetPlaceholder: "e.g. Quit completely, or reduce to 5 cigarettes/day",
-    currentQ: "How many cigarettes do you smoke per day right now?",
-    currentPlaceholder: "e.g. 20 cigarettes/day",
+    targetOptions: [
+      "🚭 Quit permanently",
+      "📉 Reduce the amount gradually",
+      "⏸️ Take a break for now",
+      "🔄 Quit and restart when ready",
+    ],
+    currentQ: "How many cigarettes do you smoke per day?",
+    currentOptions: [
+      "1 or fewer",
+      "2–4 a day",
+      "4–10 a day",
+      "10–20 a day",
+      "More than 20",
+    ],
   },
   drink_water: {
     targetQ: "How many glasses of water per day do you want to reach?",
-    targetPlaceholder: "e.g. 8 glasses per day",
-    currentQ: "How many glasses are you drinking on an average day right now?",
-    currentPlaceholder: "e.g. 2 glasses",
+    targetOptions: [
+      "4 glasses",
+      "6 glasses",
+      "8 glasses (recommended)",
+      "10+ glasses",
+    ],
+    currentQ: "How many glasses are you drinking on average right now?",
+    currentOptions: [
+      "1–2 glasses",
+      "3–4 glasses",
+      "5–6 glasses",
+      "7+ glasses",
+    ],
   },
   stand_more: {
-    targetQ: "How many standing or movement breaks per day is your goal?",
-    targetPlaceholder: "e.g. 6 breaks of 5 minutes each",
-    currentQ: "How many times do you currently stand up and move during the day?",
-    currentPlaceholder: "e.g. 1–2 times",
+    targetQ: "How many standing breaks per day is your goal?",
+    targetOptions: [
+      "2–3 breaks",
+      "4–6 breaks",
+      "Every hour (6–8 breaks)",
+      "Every 30 minutes",
+    ],
+    currentQ: "How often do you currently stand up and move?",
+    currentOptions: [
+      "Almost never",
+      "1–2 times a day",
+      "3–5 times a day",
+      "Fairly often (6+)",
+    ],
   },
 };
 
@@ -174,33 +205,35 @@ export default function SetupPage() {
       {/* ── Goal target question ────────────────────────────────────────── */}
       {step === "goal_target" && goalInfo && questions && (
         <>
-          <div className="space-y-3">
+          <div className="space-y-2 text-center">
             <div className="text-5xl">{goalInfo.icon}</div>
             <h1 className="text-2xl font-black text-white">{questions.targetQ}</h1>
-            <p className="text-gray-400 text-sm max-w-sm">
-              This helps your coach set the right target for you.
-            </p>
           </div>
 
-          <div className="w-full max-w-sm">
-            <input
-              type="text"
-              value={goalTarget}
-              onChange={(e) => setGoalTarget(e.target.value)}
-              placeholder={questions.targetPlaceholder}
-              className="w-full bg-gray-800 border border-gray-600 focus:border-[#6C63FF] rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none transition text-sm"
-              onKeyDown={(e) => e.key === "Enter" && goalTarget.trim() && setStep("goal_current")}
-              autoFocus
-            />
+          <div className="flex flex-col gap-3 w-full max-w-sm">
+            {questions.targetOptions.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => setGoalTarget(opt)}
+                className={`w-full text-left px-5 py-4 rounded-2xl border font-medium text-sm transition ${
+                  goalTarget === opt
+                    ? "border-[#6C63FF] bg-[#6C63FF]/15 text-[#a09cf0] ring-1 ring-[#6C63FF]/50"
+                    : "border-gray-600 bg-white/3 text-white"
+                }`}
+              >
+                <span className="flex items-center justify-between">
+                  {opt}
+                  {goalTarget === opt && <span className="text-[#6C63FF]">✓</span>}
+                </span>
+              </button>
+            ))}
           </div>
 
           <button
             onClick={() => setStep("goal_current")}
-            disabled={!goalTarget.trim()}
+            disabled={!goalTarget}
             className={`w-full max-w-sm py-3 px-6 rounded-xl font-semibold text-white transition ${
-              goalTarget.trim()
-                ? "bg-[#6C63FF] hover:bg-[#5a52e0]"
-                : "bg-gray-700 text-gray-500 cursor-not-allowed"
+              goalTarget ? "bg-[#6C63FF] hover:bg-[#5a52e0]" : "bg-gray-700 text-gray-500 cursor-not-allowed"
             }`}
           >
             Next →
@@ -215,33 +248,35 @@ export default function SetupPage() {
       {/* ── Goal current question ───────────────────────────────────────── */}
       {step === "goal_current" && goalInfo && questions && (
         <>
-          <div className="space-y-3">
+          <div className="space-y-2 text-center">
             <div className="text-5xl">{goalInfo.icon}</div>
             <h1 className="text-2xl font-black text-white">{questions.currentQ}</h1>
-            <p className="text-gray-400 text-sm max-w-sm">
-              Your coach needs to know where you're starting from.
-            </p>
           </div>
 
-          <div className="w-full max-w-sm">
-            <input
-              type="text"
-              value={goalCurrent}
-              onChange={(e) => setGoalCurrent(e.target.value)}
-              placeholder={questions.currentPlaceholder}
-              className="w-full bg-gray-800 border border-gray-600 focus:border-[#6C63FF] rounded-xl px-4 py-3 text-white placeholder-gray-500 outline-none transition text-sm"
-              onKeyDown={(e) => e.key === "Enter" && goalCurrent.trim() && setStep("mode")}
-              autoFocus
-            />
+          <div className="flex flex-col gap-3 w-full max-w-sm">
+            {questions.currentOptions.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => setGoalCurrent(opt)}
+                className={`w-full text-left px-5 py-4 rounded-2xl border font-medium text-sm transition ${
+                  goalCurrent === opt
+                    ? "border-[#6C63FF] bg-[#6C63FF]/15 text-[#a09cf0] ring-1 ring-[#6C63FF]/50"
+                    : "border-gray-600 bg-white/3 text-white"
+                }`}
+              >
+                <span className="flex items-center justify-between">
+                  {opt}
+                  {goalCurrent === opt && <span className="text-[#6C63FF]">✓</span>}
+                </span>
+              </button>
+            ))}
           </div>
 
           <button
             onClick={() => setStep("mode")}
-            disabled={!goalCurrent.trim()}
+            disabled={!goalCurrent}
             className={`w-full max-w-sm py-3 px-6 rounded-xl font-semibold text-white transition ${
-              goalCurrent.trim()
-                ? "bg-[#6C63FF] hover:bg-[#5a52e0]"
-                : "bg-gray-700 text-gray-500 cursor-not-allowed"
+              goalCurrent ? "bg-[#6C63FF] hover:bg-[#5a52e0]" : "bg-gray-700 text-gray-500 cursor-not-allowed"
             }`}
           >
             Next →

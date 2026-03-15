@@ -57,6 +57,7 @@ async def entrypoint(ctx: JobContext):
     goal         = ""
     goal_target  = ""
     goal_current = ""
+    is_checkin   = False
 
     for participant in ctx.room.remote_participants.values():
         if participant.metadata:
@@ -70,7 +71,8 @@ async def entrypoint(ctx: JobContext):
                 goal         = meta.get("goal", "")
                 goal_target  = meta.get("goal_target", "")
                 goal_current = meta.get("goal_current", "")
-                logger.info(f"Found metadata from existing participant {participant.identity}: mode={mode}, language={language}, goal={goal}")
+                is_checkin   = meta.get("is_checkin", "0") == "1"
+                logger.info(f"Found metadata from existing participant {participant.identity}: mode={mode}, language={language}, goal={goal}, is_checkin={is_checkin}")
                 break
             except Exception:
                 pass
@@ -81,7 +83,7 @@ async def entrypoint(ctx: JobContext):
 
         @ctx.room.on("participant_connected")
         def on_participant(participant: rtc.RemoteParticipant):
-            nonlocal voice_id, photo_url, mode, language, memory, goal, goal_target, goal_current
+            nonlocal voice_id, photo_url, mode, language, memory, goal, goal_target, goal_current, is_checkin
             if participant.metadata:
                 try:
                     meta         = json.loads(participant.metadata)
@@ -93,7 +95,8 @@ async def entrypoint(ctx: JobContext):
                     goal         = meta.get("goal", "")
                     goal_target  = meta.get("goal_target", "")
                     goal_current = meta.get("goal_current", "")
-                    logger.info(f"Got metadata from participant {participant.identity}: mode={mode}, language={language}, goal={goal}")
+                    is_checkin   = meta.get("is_checkin", "0") == "1"
+                    logger.info(f"Got metadata from participant {participant.identity}: mode={mode}, language={language}, goal={goal}, is_checkin={is_checkin}")
                     found.set()
                 except Exception:
                     pass
@@ -108,9 +111,9 @@ async def entrypoint(ctx: JobContext):
         return
 
     if mode == "therapist":
-        await run_therapist_session(ctx, language, memory, goal, goal_target, goal_current)
+        await run_therapist_session(ctx, language, memory, goal, goal_target, goal_current, is_checkin)
     else:
-        await run_digital_twin_session(ctx, voice_id, photo_url, language, memory, goal, goal_target, goal_current)
+        await run_digital_twin_session(ctx, voice_id, photo_url, language, memory, goal, goal_target, goal_current, is_checkin)
 
 
 LANGUAGE_NAMES = {"en": "English", "he": "Hebrew (עברית)"}
@@ -139,8 +142,10 @@ Your patient is actively trying to quit smoking. Your job is to push them forwar
 - Be warm but direct: your job is accountability, not just listening.""",
         "first_twin_greeting": "Ask yourself in first person, warmly: how many cigarettes are you smoking per day right now, and what's the goal — quit completely or cut down to a certain number? One natural sentence.",
         "checkin_twin_greeting": "Ask yourself in first person, directly: how many cigarettes today compared to your goal? One short sentence.",
+        "continue_twin_greeting": "Welcome yourself back in first person. Reference something from the previous sessions briefly and jump straight into coaching. One or two energetic sentences — no need to ask for numbers again.",
         "first_therapist_greeting": "Greet your patient warmly and ask: how many cigarettes per day are they smoking right now, and what's their goal — to quit entirely or cut down to how many? One or two sentences.",
         "checkin_therapist_greeting": "Greet your patient and immediately ask: how many cigarettes today compared to their goal? One or two sentences.",
+        "continue_therapist_greeting": "Welcome your patient back warmly. Reference something meaningful from previous sessions and move straight into coaching. Two sentences — do not ask them to re-introduce their goal.",
     },
     "drink_water": {
         "twin_system": """Your shared mission is drinking enough water every single day.
@@ -165,8 +170,10 @@ Your patient wants to drink more water consistently. Push them forward every ses
 - Be practical and action-oriented, not just supportive.""",
         "first_twin_greeting": "Ask yourself in first person, warmly: how many glasses of water do you want to drink per day as your goal, and how many are you actually drinking right now? One natural sentence.",
         "checkin_twin_greeting": "Ask yourself in first person, directly: how many glasses of water have you had so far today — are you on track? One short sentence.",
+        "continue_twin_greeting": "Welcome yourself back in first person. Reference the hydration progress from before and dive straight into coaching. One or two energetic sentences — no need to re-ask for numbers.",
         "first_therapist_greeting": "Greet your patient warmly and ask: how many glasses of water per day is their goal, and how many are they currently drinking? One or two sentences.",
         "checkin_therapist_greeting": "Greet your patient and immediately ask: how many glasses of water today so far — on track with their goal? One or two sentences.",
+        "continue_therapist_greeting": "Welcome your patient back warmly. Reference their hydration journey from previous sessions and move straight into coaching. Two sentences — do not re-ask for their goal numbers.",
     },
     "stand_more": {
         "twin_system": """Your shared mission is to stand up and move regularly throughout the day, breaking long sitting periods.
@@ -191,13 +198,15 @@ Your patient wants to stand and move more throughout the day. Be an active, acco
 - Be direct and action-focused, not just reflective.""",
         "first_twin_greeting": "Ask yourself in first person, warmly: how many times a day do you want to stand up and move as your goal, and how often are you actually doing it right now? One natural sentence.",
         "checkin_twin_greeting": "Ask yourself in first person, directly: how many standing breaks have you taken today — are you hitting your goal? One short sentence.",
+        "continue_twin_greeting": "Welcome yourself back in first person. Reference the movement habits we've been building and jump straight into coaching. One or two energetic sentences — no need to re-ask for numbers.",
         "first_therapist_greeting": "Greet your patient warmly and ask: how many standing breaks per day is their goal, and how many are they currently taking? One or two sentences.",
         "checkin_therapist_greeting": "Greet your patient and immediately ask: how many standing breaks today so far — on track with their goal? One or two sentences.",
+        "continue_therapist_greeting": "Welcome your patient back warmly. Reference their movement progress from previous sessions and dive straight into coaching. Two sentences — do not re-ask for their goal numbers.",
     },
 }
 
 
-async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_url: str | None, language: str = "en", memory: str = "", goal: str = "", goal_target: str = "", goal_current: str = ""):
+async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_url: str | None, language: str = "en", memory: str = "", goal: str = "", goal_target: str = "", goal_current: str = "", is_checkin: bool = False):
     if not voice_id or not photo_url:
         logger.error("Digital twin mode requires voice_id and photo_url")
         return
@@ -250,8 +259,10 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
         )
     elif is_first_session:
         greeting_instructions = coaching.get("first_twin_greeting", f"Greet yourself warmly in first person in {lang_name}. One sentence.")
-    else:
+    elif is_checkin:
         greeting_instructions = coaching.get("checkin_twin_greeting", f"Ask yourself in first person how you're doing today with your goal. One sentence.")
+    else:
+        greeting_instructions = coaching.get("continue_twin_greeting", f"Welcome yourself back in first person. Reference the previous sessions briefly and continue coaching. One or two sentences.")
 
     await session.start(
         agent=Agent(
@@ -267,7 +278,7 @@ IMPORTANT: Always respond in {lang_name}. Do not switch languages under any circ
     session.generate_reply(instructions=f"{greeting_instructions} Respond in {lang_name}.")
 
 
-async def run_therapist_session(ctx: JobContext, language: str = "en", memory: str = "", goal: str = "", goal_target: str = "", goal_current: str = ""):
+async def run_therapist_session(ctx: JobContext, language: str = "en", memory: str = "", goal: str = "", goal_target: str = "", goal_current: str = "", is_checkin: bool = False):
     lang_name = LANGUAGE_NAMES.get(language, "English")
     logger.info(f"Starting therapist session, language={language}, goal={goal}")
 
@@ -315,8 +326,10 @@ async def run_therapist_session(ctx: JobContext, language: str = "en", memory: s
         )
     elif is_first_session:
         greeting_instructions = coaching.get("first_therapist_greeting", f"Greet the user warmly and invite them to share what's on their mind. 1–2 sentences.")
-    else:
+    elif is_checkin:
         greeting_instructions = coaching.get("checkin_therapist_greeting", f"Greet the user and check in on their progress today. 1–2 sentences.")
+    else:
+        greeting_instructions = coaching.get("continue_therapist_greeting", f"Welcome the user back warmly. Reference the previous sessions and continue coaching. 1–2 sentences.")
 
     await session.start(
         agent=Agent(

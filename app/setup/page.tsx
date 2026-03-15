@@ -116,6 +116,10 @@ export default function SetupPage() {
     persistSet("goalCurrent", goalCurrent.trim());
     persistRemove("sessionMemory_digital_twin");
     persistRemove("sessionMemory_therapist");
+    persistRemove("sessionCount_digital_twin");
+    persistRemove("sessionCount_therapist");
+    persistRemove("lastSessionTime_digital_twin");
+    persistRemove("lastSessionTime_therapist");
   }
 
   function handleModeSelect(mode: Mode) {

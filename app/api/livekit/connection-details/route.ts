@@ -32,6 +32,7 @@ export async function GET(req: NextRequest) {
   const goal         = searchParams.get("goal") ?? "";
   const goalTarget   = searchParams.get("goalTarget") ?? "";
   const goalCurrent  = searchParams.get("goalCurrent") ?? "";
+  const isCheckin    = searchParams.get("isCheckin") === "1";
 
   if (mode === "digital_twin" && (!voiceId || !photoUrl)) {
     return NextResponse.json(
@@ -67,6 +68,7 @@ export async function GET(req: NextRequest) {
   if (goal)         participantMeta.goal         = goal;
   if (goalTarget)   participantMeta.goal_target  = goalTarget;
   if (goalCurrent)  participantMeta.goal_current = goalCurrent;
+  participantMeta.is_checkin = isCheckin ? "1" : "0";
 
   const token = new AccessToken(apiKey, apiSecret, {
     identity: participantName,

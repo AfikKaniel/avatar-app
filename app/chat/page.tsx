@@ -58,7 +58,9 @@ function ChatPageInner() {
   const [micOn, setMicOn]           = useState(true);
   const [videoReady, setVideoReady] = useState(false);
 
-  const memoryKey = `sessionMemory_${mode}`;
+  const memoryKey          = `sessionMemory_${mode}`;
+  const sessionCountKey    = `sessionCount_${mode}`;
+  const lastSessionTimeKey = `lastSessionTime_${mode}`;
   const isEndingRef = useRef(false);
 
   const label = mode === "therapist" ? "Your Therapist" : "Your Digital Twin";
@@ -90,6 +92,12 @@ function ChatPageInner() {
       const goalTarget   = persistGet("goalTarget") ?? "";
       const goalCurrent  = persistGet("goalCurrent") ?? "";
 
+      // Determine if this is a check-in session (every 3rd session or after 12h gap)
+      const completedSessions = parseInt(persistGet(sessionCountKey) ?? "0", 10);
+      const lastSessionTime   = parseInt(persistGet(lastSessionTimeKey) ?? "0", 10);
+      const hoursSinceLast    = lastSessionTime ? (Date.now() - lastSessionTime) / 3_600_000 : Infinity;
+      const isCheckin         = memory.trim() !== "" && (completedSessions % 3 === 0 || hoursSinceLast > 12);
+
       if (mode === "therapist") {
         params = new URLSearchParams({ mode: "therapist", language: lang });
       } else {
@@ -108,6 +116,7 @@ function ChatPageInner() {
       if (goal)         params.set("goal", goal);
       if (goalTarget)   params.set("goalTarget", goalTarget);
       if (goalCurrent)  params.set("goalCurrent", goalCurrent);
+      params.set("isCheckin", isCheckin ? "1" : "0");
 
       const res = await fetch(`/api/livekit/connection-details?${params}`);
       if (!res.ok) throw new Error("Could not get connection details");
@@ -214,6 +223,11 @@ function ChatPageInner() {
         // Memory save failed silently — don't block navigation
       }
     }
+
+    // Update session tracking
+    const prevCount = parseInt(persistGet(sessionCountKey) ?? "0", 10);
+    persistSet(sessionCountKey, String(prevCount + 1));
+    persistSet(lastSessionTimeKey, String(Date.now()));
 
     // Log session to database (fire-and-forget)
     fetch("/api/log-session", {

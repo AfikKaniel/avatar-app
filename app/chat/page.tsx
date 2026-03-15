@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { persistGet, persistSet } from "@/lib/persist";
 import {
   Room,
   RoomEvent,
@@ -84,16 +85,16 @@ function ChatPageInner() {
     try {
       let params: URLSearchParams;
 
-      const memory       = localStorage.getItem(memoryKey) ?? "";
-      const goal         = localStorage.getItem("userGoal") ?? "";
-      const goalTarget   = localStorage.getItem("goalTarget") ?? "";
-      const goalCurrent  = localStorage.getItem("goalCurrent") ?? "";
+      const memory       = persistGet(memoryKey) ?? "";
+      const goal         = persistGet("userGoal") ?? "";
+      const goalTarget   = persistGet("goalTarget") ?? "";
+      const goalCurrent  = persistGet("goalCurrent") ?? "";
 
       if (mode === "therapist") {
         params = new URLSearchParams({ mode: "therapist", language: lang });
       } else {
-        const voiceId  = localStorage.getItem("voiceId");
-        const photoUrl = localStorage.getItem("photoUrl");
+        const voiceId  = persistGet("voiceId");
+        const photoUrl = persistGet("photoUrl");
 
         if (!voiceId || !photoUrl) {
           setErrorMsg("No avatar found. Please complete onboarding first.");
@@ -198,7 +199,7 @@ function ChatPageInner() {
     let summary = "";
     if (transcript.length > 0) {
       try {
-        const previousMemory = localStorage.getItem(memoryKey) ?? "";
+        const previousMemory = persistGet(memoryKey) ?? "";
         const res = await fetch("/api/summarize", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -207,7 +208,7 @@ function ChatPageInner() {
         if (res.ok) {
           const data = await res.json();
           summary = data.summary ?? "";
-          if (summary) localStorage.setItem(memoryKey, summary);
+          if (summary) persistSet(memoryKey, summary);
         }
       } catch {
         // Memory save failed silently — don't block navigation
@@ -221,9 +222,9 @@ function ChatPageInner() {
       body: JSON.stringify({
         mode,
         language: language ?? "en",
-        goal: localStorage.getItem("userGoal") ?? "",
-        goalTarget: localStorage.getItem("goalTarget") ?? "",
-        goalCurrent: localStorage.getItem("goalCurrent") ?? "",
+        goal: persistGet("userGoal") ?? "",
+        goalTarget: persistGet("goalTarget") ?? "",
+        goalCurrent: persistGet("goalCurrent") ?? "",
         summary,
       }),
     }).catch(() => {});

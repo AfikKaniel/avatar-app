@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { persistGet } from "@/lib/persist";
 
 const GOAL_LABELS: Record<string, { icon: string; label: string }> = {
   quit_smoking: { icon: "🚭", label: "Quit Smoking" },
@@ -25,10 +26,10 @@ export default function Home() {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const goal    = localStorage.getItem("userGoal");
-    const mode    = localStorage.getItem("userMode");
-    const voiceId = localStorage.getItem("voiceId");
-    const photoUrl = localStorage.getItem("photoUrl");
+    const goal     = persistGet("userGoal");
+    const mode     = persistGet("userMode");
+    const voiceId  = persistGet("voiceId");
+    const photoUrl = persistGet("photoUrl");
 
     if (goal && mode) {
       setSetup({ goal, mode, hasAvatar: !!voiceId && !!photoUrl });

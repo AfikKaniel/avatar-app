@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { persistSet, persistGet, persistRemove } from "@/lib/persist";
 
 type Goal = "quit_smoking" | "drink_water" | "stand_more";
 type Mode = "digital_twin" | "therapist";
@@ -95,8 +96,8 @@ export default function SetupPage() {
   const [hasAvatar, setHasAvatar]     = useState(false);
 
   useEffect(() => {
-    const voiceId  = localStorage.getItem("voiceId");
-    const photoUrl = localStorage.getItem("photoUrl");
+    const voiceId  = persistGet("voiceId");
+    const photoUrl = persistGet("photoUrl");
     setHasAvatar(!!voiceId && !!photoUrl);
   }, []);
 
@@ -109,25 +110,22 @@ export default function SetupPage() {
   }
 
   function saveAndClearMemory(goal: Goal, mode: Mode) {
-    localStorage.setItem("userGoal", goal);
-    localStorage.setItem("userMode", mode);
-    localStorage.setItem("goalTarget", goalTarget.trim());
-    localStorage.setItem("goalCurrent", goalCurrent.trim());
-    localStorage.removeItem("sessionMemory_digital_twin");
-    localStorage.removeItem("sessionMemory_therapist");
+    persistSet("userGoal", goal);
+    persistSet("userMode", mode);
+    persistSet("goalTarget", goalTarget.trim());
+    persistSet("goalCurrent", goalCurrent.trim());
+    persistRemove("sessionMemory_digital_twin");
+    persistRemove("sessionMemory_therapist");
   }
 
   function handleModeSelect(mode: Mode) {
+    saveAndClearMemory(selectedGoal!, mode);
     if (mode === "therapist") {
-      saveAndClearMemory(selectedGoal!, mode);
       router.push("/chat?mode=therapist");
+    } else if (hasAvatar) {
+      router.push("/chat?mode=digital_twin"); // keep existing avatar, skip re-onboarding
     } else {
-      if (hasAvatar) {
-        setStep("avatar");
-      } else {
-        saveAndClearMemory(selectedGoal!, mode);
-        router.push("/onboarding");
-      }
+      router.push("/onboarding");
     }
   }
 

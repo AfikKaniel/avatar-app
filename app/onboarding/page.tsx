@@ -5,6 +5,7 @@ import PhotoCapture from "@/components/PhotoCapture";
 import AvatarStyler from "@/components/AvatarStyler";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import { useRouter } from "next/navigation";
+import { persistSet } from "@/lib/persist";
 
 type Step = "photo" | "stylize" | "voice" | "processing" | "done";
 
@@ -53,8 +54,8 @@ export default function OnboardingPage() {
       const { photoUrl } = saveData;
 
       // ── 3. Persist voice_id + photoUrl for the chat page ─────────────────
-      localStorage.setItem("voiceId",  voiceId);
-      localStorage.setItem("photoUrl", photoUrl);
+      persistSet("voiceId",  voiceId);
+      persistSet("photoUrl", photoUrl);
 
       setStep("done");
     } catch (e: unknown) {

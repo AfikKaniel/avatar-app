@@ -210,8 +210,8 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
 
     session = AgentSession(
         vad=silero.VAD.load(
-            activation_threshold=0.82,
-            min_silence_duration=0.9,
+            activation_threshold=0.85,
+            min_silence_duration=0.6,
         ),
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
@@ -220,6 +220,10 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
             voice_id=voice_id,
             model="eleven_multilingual_v2",
         ),
+        min_interruption_duration=2.0,
+        min_interruption_words=2,
+        min_endpointing_delay=0.3,
+        max_endpointing_delay=5.0,
     )
 
     hedra_avatar = hedra.AvatarSession(avatar_image=avatar_image)
@@ -272,8 +276,8 @@ async def run_therapist_session(ctx: JobContext, language: str = "en", memory: s
 
     session = AgentSession(
         vad=silero.VAD.load(
-            activation_threshold=0.82,
-            min_silence_duration=0.9,
+            activation_threshold=0.85,
+            min_silence_duration=0.6,
         ),
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
@@ -281,6 +285,10 @@ async def run_therapist_session(ctx: JobContext, language: str = "en", memory: s
             model="tts-1",
             voice="nova",
         ),
+        min_interruption_duration=2.0,
+        min_interruption_words=2,
+        min_endpointing_delay=0.3,
+        max_endpointing_delay=5.0,
     )
 
     hedra_avatar = hedra.AvatarSession(avatar_image=avatar_image)

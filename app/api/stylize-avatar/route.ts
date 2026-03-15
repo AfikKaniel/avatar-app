@@ -37,12 +37,12 @@ export async function POST(req: NextRequest) {
   body.append("image", photo);
   body.append(
     "prompt",
-    "professional digital avatar portrait, studio lighting, clean dark navy blue background, " +
-    "electric blue glowing eyes, cinematic lighting, sharp focus, high quality, detailed skin"
+    "same person, preserve exact facial features and identity, professional digital avatar portrait, " +
+    "cinematic studio lighting, clean dark navy blue background, sharp focus, high quality skin"
   );
   body.append("mode", "image-to-image");
   body.append("model", "sd3-turbo");
-  body.append("strength", "0.45");
+  body.append("strength", "0.30");
   body.append("output_format", "jpeg");
 
   let res: Response;

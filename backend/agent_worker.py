@@ -213,20 +213,20 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
 
     session = AgentSession(
         vad=silero.VAD.load(
-            activation_threshold=0.85,
-            min_silence_duration=0.6,
+            activation_threshold=0.65,   # lower = picks up softer speech faster
+            min_silence_duration=0.4,    # quicker to detect end of utterance
         ),
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
         tts=elevenlabs.TTS(
             api_key=os.environ.get("ELEVENLABS_API_KEY"),
             voice_id=voice_id,
-            model="eleven_multilingual_v2",
+            model="eleven_turbo_v2_5",   # lower latency → tighter lip-sync
         ),
-        min_interruption_duration=2.0,
+        min_interruption_duration=1.2,
         min_interruption_words=2,
-        min_endpointing_delay=0.3,
-        max_endpointing_delay=5.0,
+        min_endpointing_delay=0.2,       # respond faster after user stops talking
+        max_endpointing_delay=3.0,
     )
 
     hedra_avatar = hedra.AvatarSession(avatar_image=avatar_image)

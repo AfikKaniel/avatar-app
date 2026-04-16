@@ -102,7 +102,7 @@ async def entrypoint(ctx: JobContext):
                     pass
 
         try:
-            await asyncio.wait_for(found.wait(), timeout=10.0)
+            await asyncio.wait_for(found.wait(), timeout=30.0)
         except asyncio.TimeoutError:
             logger.error("Timed out waiting for participant metadata")
 
@@ -208,8 +208,19 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
     lang_name = LANGUAGE_NAMES.get(language, "English")
     logger.info(f"Starting digital twin session: voice_id={voice_id}, language={language}, goal={goal}")
 
-    with urllib.request.urlopen(photo_url) as response:
-        avatar_image = Image.open(BytesIO(response.read())).copy()
+    # ── Download avatar face portrait ────────────────────────────────────────
+    # The iOS app uploads a Vision-cropped face portrait to Vercel Blob.
+    # We download it here for Hedra to animate.
+    avatar_image: Image.Image | None = None
+    try:
+        logger.info(f"Downloading avatar portrait from: {photo_url}")
+        req = urllib.request.Request(photo_url, headers={"User-Agent": "GagingAI/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as response:
+            avatar_image = Image.open(BytesIO(response.read())).copy()
+        logger.info(f"Portrait downloaded: {avatar_image.size}")
+    except Exception as e:
+        logger.error(f"Failed to download portrait: {e}")
+        # Continue with no image — Hedra will use a placeholder or we run audio-only
 
     session = AgentSession(
         vad=silero.VAD.load(
@@ -229,8 +240,28 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
         max_endpointing_delay=3.0,
     )
 
-    hedra_avatar = hedra.AvatarSession(avatar_image=avatar_image)
-    await hedra_avatar.start(session, room=ctx.room)
+    # ── Start Hedra talking-head video ───────────────────────────────────────
+    # Hedra animates the face portrait to lip-sync with ElevenLabs TTS audio.
+    # If Hedra fails (missing API key, bad image, quota exceeded), the session
+    # continues as audio-only — voice responses still work, just no live video.
+    hedra_started = False
+    if avatar_image is not None:
+        try:
+            hedra_key = os.environ.get("HEDRA_API_KEY")
+            if not hedra_key:
+                logger.warning("HEDRA_API_KEY not set — Hedra video disabled")
+            else:
+                hedra_avatar = hedra.AvatarSession(avatar_image=avatar_image)
+                await hedra_avatar.start(session, room=ctx.room)
+                hedra_started = True
+                logger.info("Hedra avatar session started ✓")
+        except Exception as e:
+            logger.error(f"Hedra failed: {e} — falling back to audio-only session")
+    else:
+        logger.warning("No portrait image — running audio-only session")
+
+    if not hedra_started:
+        logger.info("Running audio-only digital twin (no Hedra video)")
 
     coaching = GOAL_COACHING.get(goal, {})
     goal_section = f"\n\n{coaching['twin_system']}" if coaching else ""
@@ -304,8 +335,16 @@ async def run_therapist_session(ctx: JobContext, language: str = "en", memory: s
         max_endpointing_delay=5.0,
     )
 
-    hedra_avatar = hedra.AvatarSession(avatar_image=avatar_image)
-    await hedra_avatar.start(session, room=ctx.room)
+    try:
+        hedra_key = os.environ.get("HEDRA_API_KEY")
+        if not hedra_key:
+            logger.warning("HEDRA_API_KEY not set — therapist Hedra video disabled")
+        else:
+            hedra_avatar = hedra.AvatarSession(avatar_image=avatar_image)
+            await hedra_avatar.start(session, room=ctx.room)
+            logger.info("Therapist Hedra avatar session started ✓")
+    except Exception as e:
+        logger.error(f"Therapist Hedra failed: {e} — audio-only")
 
     coaching = GOAL_COACHING.get(goal, {})
     goal_section = f"\n\n{coaching['therapist_system']}" if coaching else ""

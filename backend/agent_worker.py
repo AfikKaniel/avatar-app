@@ -1,4 +1,4 @@
-#!/opt/homebrew/bin/python3.11
+#!/usr/bin/env python3
 import asyncio
 import json
 import logging
@@ -13,32 +13,56 @@ from livekit import rtc
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, WorkerType, cli
 from livekit.plugins import anthropic, elevenlabs, hedra, openai, silero
 
-logger = logging.getLogger("hedra-avatar")
-logger.setLevel(logging.INFO)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("gaging-avatar")
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env.local"))
 
 ASSETS_DIR = os.path.join(os.path.dirname(__file__), "assets")
-
-# Default ElevenLabs "Rachel" voice — calm, professional
 DEFAULT_THERAPIST_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
+
+# ── Pre-load Silero VAD once at startup (not per-session) ─────────────────────
+# This avoids a 5-10s model download delay on the first session.
+logger.info("Pre-loading Silero VAD model…")
+_VAD = silero.VAD.load(activation_threshold=0.65, min_silence_duration=0.4)
+logger.info("Silero VAD ready ✓")
+
+
+# ── Image helpers ──────────────────────────────────────────────────────────────
+
+def crop_face_portrait(img: Image.Image) -> Image.Image:
+    """
+    Crop the top 35% of a full-body image to get a usable face portrait for Hedra.
+    Hedra works best with a 512×512 face portrait, not a full-body shot.
+    """
+    w, h = img.size
+    face_h = int(h * 0.35)
+    face = img.crop((0, 0, w, face_h))
+    return face.resize((512, 512), Image.LANCZOS)
+
+
+def download_image(url: str, timeout: int = 15) -> Image.Image | None:
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "GagingAI/1.0"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            img = Image.open(BytesIO(r.read())).copy()
+        logger.info(f"Downloaded image {img.size} from {url[:60]}…")
+        return img
+    except Exception as e:
+        logger.error(f"Image download failed: {e}")
+        return None
 
 
 def load_therapist_image() -> Image.Image:
-    """Load therapist avatar image from local asset, env URL, or generate placeholder."""
     local_path = os.path.join(ASSETS_DIR, "therapist.jpg")
     if os.path.exists(local_path):
-        logger.info("Loaded therapist image from local asset")
         return Image.open(local_path).copy()
-
-    photo_url = os.environ.get("THERAPIST_PHOTO_URL")
-    if photo_url:
-        logger.info("Loaded therapist image from THERAPIST_PHOTO_URL")
-        with urllib.request.urlopen(photo_url) as response:
-            return Image.open(BytesIO(response.read())).copy()
-
-    # Fallback: generate a simple neutral silhouette placeholder
-    logger.warning("No therapist.jpg or THERAPIST_PHOTO_URL found — using placeholder")
+    url = os.environ.get("THERAPIST_PHOTO_URL")
+    if url:
+        img = download_image(url)
+        if img:
+            return img
+    logger.warning("Using placeholder therapist image")
     img = Image.new("RGB", (512, 512), color=(220, 220, 230))
     draw = ImageDraw.Draw(img)
     draw.ellipse([176, 80, 336, 240], fill=(180, 180, 190))
@@ -46,12 +70,51 @@ def load_therapist_image() -> Image.Image:
     return img
 
 
+# ── Wait for the iOS participant to be present in the room ────────────────────
+async def wait_for_user(ctx: JobContext, timeout: float = 30.0) -> rtc.RemoteParticipant | None:
+    """
+    Return the first non-agent remote participant.
+    Checks pre-existing participants first, then waits up to `timeout` seconds.
+    """
+    # First pass — participant may already be in the room
+    for p in ctx.room.remote_participants.values():
+        logger.info(f"User already in room: {p.identity}")
+        return p
+
+    found_event = asyncio.Event()
+    found_participant: list[rtc.RemoteParticipant] = []
+
+    @ctx.room.on("participant_connected")
+    def on_join(participant: rtc.RemoteParticipant):
+        if not found_participant:
+            found_participant.append(participant)
+            found_event.set()
+
+    # Second pass — close the race window between ctx.connect() and listener
+    for p in ctx.room.remote_participants.values():
+        logger.info(f"User in room (second pass): {p.identity}")
+        return p
+
+    logger.info("Waiting for iOS user to join the room…")
+    try:
+        await asyncio.wait_for(found_event.wait(), timeout=timeout)
+        logger.info(f"iOS user joined: {found_participant[0].identity}")
+        return found_participant[0]
+    except asyncio.TimeoutError:
+        logger.error("Timed out waiting for iOS user")
+        return None
+
+
+# ── Main entrypoint ────────────────────────────────────────────────────────────
+
 async def entrypoint(ctx: JobContext):
     await ctx.connect()
+    logger.info(f"Agent connected to room: {ctx.room.name}")
 
+    # ── 1. Read session config from room metadata (set at creation, always ready) ──
     voice_id     = None
     photo_url    = None
-    mode         = None
+    mode         = "digital_twin"
     language     = "en"
     memory       = ""
     goal         = ""
@@ -59,8 +122,9 @@ async def entrypoint(ctx: JobContext):
     goal_current = ""
     is_checkin   = False
 
-    def apply_meta(meta: dict) -> bool:
-        nonlocal voice_id, photo_url, mode, language, memory, goal, goal_target, goal_current, is_checkin
+    def apply_meta(meta: dict):
+        nonlocal voice_id, photo_url, mode, language, memory
+        nonlocal goal, goal_target, goal_current, is_checkin
         mode         = meta.get("mode", "digital_twin")
         voice_id     = meta.get("voice_id")
         photo_url    = meta.get("photo_url")
@@ -70,71 +134,53 @@ async def entrypoint(ctx: JobContext):
         goal_target  = meta.get("goal_target", "")
         goal_current = meta.get("goal_current", "")
         is_checkin   = meta.get("is_checkin", "0") == "1"
-        return True
 
-    def parse_meta(participant) -> bool:
-        raw = participant.metadata
-        if not raw:
-            return False
-        try:
-            meta = json.loads(raw)
-            apply_meta(meta)
-            logger.info(f"Parsed metadata from participant {participant.identity}: mode={mode}")
-            return True
-        except Exception:
-            return False
-
-    # ── Try room metadata first (set at room creation, always available) ───────
     room_raw = ctx.room.metadata
     if room_raw:
         try:
             apply_meta(json.loads(room_raw))
-            logger.info(f"Parsed metadata from room: mode={mode}, language={language}")
+            logger.info(f"Room metadata parsed: mode={mode}, language={language}, voice_id={voice_id}")
         except Exception as e:
             logger.warning(f"Failed to parse room metadata: {e}")
-            mode = None  # reset so we fall through to participant check
 
-    # ── Fall back to participant metadata if room metadata didn't have mode ────
-    if mode is None:
-        # First pass: check participants already in the room
-        for participant in ctx.room.remote_participants.values():
-            if parse_meta(participant):
-                break
+    # Fallback: try participant metadata
+    if mode == "digital_twin" and not voice_id:
+        for p in ctx.room.remote_participants.values():
+            raw = p.metadata
+            if raw:
+                try:
+                    apply_meta(json.loads(raw))
+                    logger.info(f"Participant metadata parsed: mode={mode}")
+                    break
+                except Exception:
+                    pass
 
-    if mode is None:
-        logger.info("No metadata yet — waiting for participant…")
-        found = asyncio.Event()
+    logger.info(f"Session config — mode={mode}, voice_id={voice_id}, photo_url={'set' if photo_url else 'none'}")
 
-        @ctx.room.on("participant_connected")
-        def on_participant(participant: rtc.RemoteParticipant):
-            if parse_meta(participant):
-                found.set()
-
-        @ctx.room.on("participant_metadata_changed")
-        def on_metadata_changed(participant: rtc.Participant, prev_metadata: str):
-            if isinstance(participant, rtc.RemoteParticipant) and parse_meta(participant):
-                found.set()
-
-        # Second pass: close race window between ctx.connect() and listener registration
-        for participant in ctx.room.remote_participants.values():
-            if parse_meta(participant):
-                found.set()
-                break
-
-        try:
-            await asyncio.wait_for(found.wait(), timeout=30.0)
-        except asyncio.TimeoutError:
-            logger.error("Timed out waiting for participant metadata")
-
-    if mode is None:
-        logger.error("Could not determine session mode — exiting")
+    # ── 2. Wait for the iOS user to be in the room ──────────────────────────────
+    ios_user = await wait_for_user(ctx)
+    if ios_user is None:
+        logger.error("No iOS user — aborting session")
         return
 
-    if mode == "therapist":
-        await run_therapist_session(ctx, language, memory, goal, goal_target, goal_current, is_checkin)
-    else:
-        await run_digital_twin_session(ctx, voice_id, photo_url, language, memory, goal, goal_target, goal_current, is_checkin)
+    # Give iOS a moment to fully subscribe to the agent's audio track
+    await asyncio.sleep(0.8)
+    logger.info(f"Starting session with participant: {ios_user.identity}")
 
+    # ── 3. Run the appropriate session type ─────────────────────────────────────
+    if mode == "therapist":
+        await run_therapist_session(
+            ctx, ios_user, language, memory,
+            goal, goal_target, goal_current, is_checkin
+        )
+    else:
+        await run_digital_twin_session(
+            ctx, ios_user, voice_id, photo_url, language, memory,
+            goal, goal_target, goal_current, is_checkin
+        )
+
+
+# ── Coaching content ───────────────────────────────────────────────────────────
 
 LANGUAGE_NAMES = {"en": "English", "he": "Hebrew (עברית)"}
 
@@ -166,75 +212,50 @@ Your patient is actively trying to quit smoking. Your job is to push them forwar
         "continue_therapist_greeting": "Welcome your patient back warmly. Reference something meaningful from previous sessions and move straight into coaching. Two sentences — do not ask them to re-introduce their goal.",
     },
     "drink_water": {
-        "twin_system": """Your shared mission is drinking enough water every single day.
-You know how easy it is to forget — busy days, always another task first.
-As a coach speaking to yourself:
-- You already know the user's hydration goal and baseline — do NOT ask for them again unless this is a designated check-in session.
-- Celebrate when the goal is hit — make it feel like a real win.
-- Suggest practical systems: water bottle always on the desk, phone reminders, habit stacking (drink a glass every time you check your phone).
-- Remind yourself why it matters: energy, focus, skin, long-term health.
-- Call out the pattern when water gets skipped.
-- End each session with one concrete hydration commitment for the next day.""",
-        "therapist_system": """You are a wellness and habit coach specializing in hydration and healthy routines.
-Your patient wants to drink more water consistently. Push them forward every session.
-- You already know the patient's hydration goal and baseline — do NOT ask for them again unless this is a designated check-in session.
-- Celebrate consistency and hitting the daily target.
-- Teach habit-stacking: link drinking water to existing habits.
-- Help set up environmental cues: water bottle placement, phone reminders, visual trackers.
-- Explore what gets in the way and build specific solutions.
-- End every session with a concrete, small commitment for the next day.
-- Be practical and action-oriented, not just supportive.""",
+        "twin_system": """Your shared mission is drinking enough water every single day.""",
         "first_twin_greeting": "Ask yourself in first person, warmly: how many glasses of water do you want to drink per day as your goal, and how many are you actually drinking right now? One natural sentence.",
         "checkin_twin_greeting": "Ask yourself in first person, directly: how many glasses of water have you had so far today — are you on track? One short sentence.",
-        "continue_twin_greeting": "Welcome yourself back in first person. Reference the hydration progress from before and dive straight into coaching. One or two energetic sentences — no need to re-ask for numbers.",
+        "continue_twin_greeting": "Welcome yourself back in first person. Reference the hydration progress from before and dive straight into coaching. One or two energetic sentences.",
         "first_therapist_greeting": "Greet your patient warmly and ask: how many glasses of water per day is their goal, and how many are they currently drinking? One or two sentences.",
         "checkin_therapist_greeting": "Greet your patient and immediately ask: how many glasses of water today so far — on track with their goal? One or two sentences.",
-        "continue_therapist_greeting": "Welcome your patient back warmly. Reference their hydration journey from previous sessions and move straight into coaching. Two sentences — do not re-ask for their goal numbers.",
+        "continue_therapist_greeting": "Welcome your patient back warmly. Reference their hydration journey from previous sessions and move straight into coaching. Two sentences.",
     },
     "stand_more": {
-        "twin_system": """Your shared mission is to stand up and move regularly throughout the day, breaking long sitting periods.
-You know the pattern — sitting down and suddenly 3 hours have passed without moving.
-As a coach speaking to yourself:
-- You already know the user's standing goal and baseline — do NOT ask for them again unless this is a designated check-in session.
-- Celebrate when the habit sticks — even one extra break is real progress.
-- Suggest systems: a phone alarm every 50 minutes, standing desk, walking during calls, standing while reading.
-- Remind yourself of the real stakes: back pain, energy levels, long-term cardiovascular health.
-- Call out the "I'll stand up in 5 minutes" trap.
-- End each session with a concrete standing plan for the next day.""",
-        "therapist_system": """You are a wellness coach and movement specialist helping your patient break sedentary habits.
-Your patient wants to stand and move more throughout the day. Be an active, accountability-focused coach.
-- You already know the patient's standing goal and baseline — do NOT ask for them again unless this is a designated check-in session.
-- Celebrate every extra break taken.
-- Teach the 50/10 rule: 50 minutes sitting, 10 minutes moving.
-- Help set up automatic triggers: alarms, habit stacking, walking meetings.
-- Explore what's blocking them and solve it concretely.
-- End every session with a specific, measurable commitment for tomorrow.
-- Be direct and action-focused, not just reflective.""",
+        "twin_system": """Your shared mission is to stand up and move regularly throughout the day.""",
         "first_twin_greeting": "Ask yourself in first person, warmly: how many times a day do you want to stand up and move as your goal, and how often are you actually doing it right now? One natural sentence.",
         "checkin_twin_greeting": "Ask yourself in first person, directly: how many standing breaks have you taken today — are you hitting your goal? One short sentence.",
-        "continue_twin_greeting": "Welcome yourself back in first person. Reference the movement habits we've been building and jump straight into coaching. One or two energetic sentences — no need to re-ask for numbers.",
+        "continue_twin_greeting": "Welcome yourself back in first person. Reference the movement habits we've been building and jump straight into coaching. One or two energetic sentences.",
         "first_therapist_greeting": "Greet your patient warmly and ask: how many standing breaks per day is their goal, and how many are they currently taking? One or two sentences.",
         "checkin_therapist_greeting": "Greet your patient and immediately ask: how many standing breaks today so far — on track with their goal? One or two sentences.",
-        "continue_therapist_greeting": "Welcome your patient back warmly. Reference their movement progress from previous sessions and dive straight into coaching. Two sentences — do not re-ask for their goal numbers.",
+        "continue_therapist_greeting": "Welcome your patient back warmly. Reference their movement progress from previous sessions and dive straight into coaching. Two sentences.",
     },
 }
 
 
-async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_url: str | None, language: str = "en", memory: str = "", goal: str = "", goal_target: str = "", goal_current: str = "", is_checkin: bool = False):
-    if not voice_id or not photo_url:
-        logger.error("Digital twin mode requires voice_id and photo_url")
+# ── Digital Twin session ───────────────────────────────────────────────────────
+
+async def run_digital_twin_session(
+    ctx: JobContext,
+    ios_user: rtc.RemoteParticipant,
+    voice_id: str | None,
+    photo_url: str | None,
+    language: str = "en",
+    memory: str = "",
+    goal: str = "",
+    goal_target: str = "",
+    goal_current: str = "",
+    is_checkin: bool = False,
+):
+    lang_name = LANGUAGE_NAMES.get(language, "English")
+    logger.info(f"Digital twin session — voice_id={voice_id}, lang={language}, goal={goal}")
+
+    if not voice_id:
+        logger.error("voice_id is missing — cannot start digital twin session")
         return
 
-    lang_name = LANGUAGE_NAMES.get(language, "English")
-    logger.info(f"Starting digital twin session: voice_id={voice_id}, language={language}, goal={goal}")
-
-    logger.info(f"Starting audio-only digital twin (voice_id={voice_id})")
-
+    # ── AgentSession (VAD → STT → LLM → TTS) ─────────────────────────────────
     session = AgentSession(
-        vad=silero.VAD.load(
-            activation_threshold=0.65,
-            min_silence_duration=0.4,
-        ),
+        vad=_VAD,
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
         tts=elevenlabs.TTS(
@@ -247,82 +268,123 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
         min_endpointing_delay=0.2,
         max_endpointing_delay=3.0,
     )
+    logger.info("AgentSession created ✓")
 
-    coaching = GOAL_COACHING.get(goal, {})
-    goal_section = f"\n\n{coaching['twin_system']}" if coaching else ""
-    memory_section = f"\n\nContext from previous sessions:\n{memory}" if memory else ""
+    # ── Hedra lip-sync avatar ─────────────────────────────────────────────────
+    hedra_started = False
+    if photo_url:
+        try:
+            hedra_key = os.environ.get("HEDRA_API_KEY")
+            if not hedra_key:
+                logger.warning("HEDRA_API_KEY not set — skipping Hedra")
+            else:
+                full_body = download_image(photo_url)
+                if full_body:
+                    # Crop top 35% to get a face portrait — Hedra needs a face, not full body
+                    face_img = crop_face_portrait(full_body)
+                    logger.info(f"Face portrait cropped: {face_img.size}")
+                    hedra_avatar = hedra.AvatarSession(avatar_image=face_img)
+                    await hedra_avatar.start(session, room=ctx.room)
+                    hedra_started = True
+                    logger.info("Hedra avatar session started ✓")
+                else:
+                    logger.warning("Could not download avatar image — no Hedra video")
+        except Exception as e:
+            logger.error(f"Hedra setup failed: {e}", exc_info=True)
+            logger.info("Continuing as audio-only (Hedra failed)")
+
+    if not hedra_started:
+        logger.info("Running audio-only digital twin (no Hedra video)")
+
+    # ── Build system prompt ────────────────────────────────────────────────────
+    coaching     = GOAL_COACHING.get(goal, {})
+    goal_section = f"\n\n{coaching['twin_system']}" if coaching.get("twin_system") else ""
+    mem_section  = f"\n\nContext from previous sessions:\n{memory}" if memory else ""
     setup_section = ""
     if goal_target or goal_current:
-        setup_section = f"\n\nUser's goal setup (already collected — do NOT ask for this again):"
-        if goal_target:
-            setup_section += f"\n- Target: {goal_target}"
-        if goal_current:
-            setup_section += f"\n- Current baseline: {goal_current}"
+        setup_section = "\n\nUser's goal setup (already collected — do NOT ask for this again):"
+        if goal_target:  setup_section += f"\n- Target: {goal_target}"
+        if goal_current: setup_section += f"\n- Current baseline: {goal_current}"
 
-    is_first_session = not memory.strip()
+    is_first   = not memory.strip()
+    has_setup  = bool(goal_target or goal_current)
     checkin_note = ""
-    if not is_first_session:
+    if not is_first:
         checkin_note = (
             "\n\nSESSION TYPE: CHECK-IN — ask for today's progress numbers."
             if is_checkin else
-            "\n\nSESSION TYPE: CONTINUATION — do NOT ask for goal or baseline numbers. Jump straight into coaching using the context from previous sessions."
+            "\n\nSESSION TYPE: CONTINUATION — do NOT ask for goal or baseline. Jump straight into coaching."
         )
 
-    has_setup = bool(goal_target or goal_current)
-    if is_first_session and has_setup:
-        greeting_instructions = (
-            f"You already know the user's goal target ({goal_target}) and current baseline ({goal_current}). "
-            f"Welcome them to their first session in first person. Acknowledge their numbers and start coaching immediately. "
-            f"One or two energetic sentences in {lang_name}."
+    if is_first and has_setup:
+        greeting = (
+            f"You know the user's target ({goal_target}) and baseline ({goal_current}). "
+            f"Welcome them and start coaching immediately. One or two energetic sentences in {lang_name}."
         )
-    elif is_first_session:
-        greeting_instructions = coaching.get("first_twin_greeting", f"Greet yourself warmly in first person in {lang_name}. One sentence.")
+    elif is_first:
+        greeting = coaching.get("first_twin_greeting", f"Greet yourself warmly in first person in {lang_name}. One sentence.")
     elif is_checkin:
-        greeting_instructions = coaching.get("checkin_twin_greeting", f"Ask yourself in first person how you're doing today with your goal. One sentence.")
+        greeting = coaching.get("checkin_twin_greeting", f"Ask yourself how you're doing today with your goal. One sentence.")
     else:
-        greeting_instructions = coaching.get("continue_twin_greeting", f"Welcome yourself back in first person. Reference the previous sessions briefly and continue coaching. One or two sentences.")
+        greeting = coaching.get("continue_twin_greeting", f"Welcome yourself back briefly and continue coaching. One or two sentences.")
 
+    instructions = (
+        f"You are the user's digital twin — a first-person AI version of themselves.\n"
+        f"Speak entirely in first person, as if you ARE the user.\n"
+        f"Keep every response to 2–3 sentences maximum. Be direct and energetic.\n"
+        f"Never break character. Never say you are an AI.\n"
+        f"IMPORTANT: Always respond in {lang_name}."
+        f"{goal_section}{setup_section}{mem_section}{checkin_note}"
+    )
+
+    # ── Start session targeted at the iOS participant ─────────────────────────
     try:
         await session.start(
-            agent=Agent(
-                instructions=f"""You are the user's digital twin — a first-person AI version of themselves.
-Speak entirely in first person, as if you ARE the user.
-Keep every response to 2–3 sentences maximum. Be direct and energetic.
-Never break character. Never say you are an AI.
-IMPORTANT: Always respond in {lang_name}. Do not switch languages under any circumstances.{goal_section}{setup_section}{memory_section}{checkin_note}"""
-            ),
+            agent=Agent(instructions=instructions),
             room=ctx.room,
+            participant=ios_user,
         )
         logger.info("AgentSession started ✓")
     except Exception as e:
         logger.error(f"session.start() failed: {e}", exc_info=True)
         return
 
+    # ── Fire opening greeting ─────────────────────────────────────────────────
     try:
-        session.generate_reply(instructions=f"{greeting_instructions} Respond in {lang_name}.")
-        logger.info("generate_reply() called ✓")
+        handle = session.generate_reply(
+            instructions=f"{greeting} Respond in {lang_name}."
+        )
+        logger.info("Greeting queued ✓")
+        # Await the handle so the greeting completes before the function returns
+        await handle
+        logger.info("Greeting delivered ✓")
     except Exception as e:
         logger.error(f"generate_reply() failed: {e}", exc_info=True)
 
 
-async def run_therapist_session(ctx: JobContext, language: str = "en", memory: str = "", goal: str = "", goal_target: str = "", goal_current: str = "", is_checkin: bool = False):
+# ── Therapist session ──────────────────────────────────────────────────────────
+
+async def run_therapist_session(
+    ctx: JobContext,
+    ios_user: rtc.RemoteParticipant,
+    language: str = "en",
+    memory: str = "",
+    goal: str = "",
+    goal_target: str = "",
+    goal_current: str = "",
+    is_checkin: bool = False,
+):
     lang_name = LANGUAGE_NAMES.get(language, "English")
-    logger.info(f"Starting therapist session, language={language}, goal={goal}")
+    logger.info(f"Therapist session — lang={language}, goal={goal}")
 
     therapist_voice_id = os.environ.get("THERAPIST_VOICE_ID", DEFAULT_THERAPIST_VOICE_ID)
     avatar_image = load_therapist_image()
 
     session = AgentSession(
-        vad=silero.VAD.load(
-            activation_threshold=0.85,
-            min_silence_duration=0.6,
-        ),
+        vad=_VAD,
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
-        tts=openai.TTS(
-            model="tts-1",
-            voice="nova",
-        ),
+        tts=openai.TTS(model="tts-1", voice="nova"),
         min_interruption_duration=2.0,
         min_interruption_words=2,
         min_endpointing_delay=0.3,
@@ -331,62 +393,77 @@ async def run_therapist_session(ctx: JobContext, language: str = "en", memory: s
 
     try:
         hedra_key = os.environ.get("HEDRA_API_KEY")
-        if not hedra_key:
-            logger.warning("HEDRA_API_KEY not set — therapist Hedra video disabled")
-        else:
-            hedra_avatar = hedra.AvatarSession(avatar_image=avatar_image)
+        if hedra_key:
+            face_img = crop_face_portrait(avatar_image)
+            hedra_avatar = hedra.AvatarSession(avatar_image=face_img)
             await hedra_avatar.start(session, room=ctx.room)
-            logger.info("Therapist Hedra avatar session started ✓")
+            logger.info("Therapist Hedra started ✓")
     except Exception as e:
         logger.error(f"Therapist Hedra failed: {e} — audio-only")
 
-    coaching = GOAL_COACHING.get(goal, {})
-    goal_section = f"\n\n{coaching['therapist_system']}" if coaching else ""
-    memory_section = f"\n\nContext from previous sessions with this user:\n{memory}" if memory else ""
+    coaching      = GOAL_COACHING.get(goal, {})
+    goal_section  = f"\n\n{coaching.get('therapist_system', '')}" if coaching.get("therapist_system") else ""
+    mem_section   = f"\n\nContext from previous sessions with this user:\n{memory}" if memory else ""
     setup_section = ""
     if goal_target or goal_current:
-        setup_section = f"\n\nUser's goal setup (already collected — do NOT ask for this again):"
-        if goal_target:
-            setup_section += f"\n- Target: {goal_target}"
-        if goal_current:
-            setup_section += f"\n- Current baseline: {goal_current}"
+        setup_section = "\n\nUser's goal setup (already collected — do NOT ask again):"
+        if goal_target:  setup_section += f"\n- Target: {goal_target}"
+        if goal_current: setup_section += f"\n- Current baseline: {goal_current}"
 
-    is_first_session = not memory.strip()
+    is_first   = not memory.strip()
+    has_setup  = bool(goal_target or goal_current)
     checkin_note = ""
-    if not is_first_session:
+    if not is_first:
         checkin_note = (
             "\n\nSESSION TYPE: CHECK-IN — ask for today's progress numbers."
             if is_checkin else
-            "\n\nSESSION TYPE: CONTINUATION — do NOT ask for goal or baseline numbers. Jump straight into coaching using the context from previous sessions."
+            "\n\nSESSION TYPE: CONTINUATION — do NOT ask for goal or baseline. Jump straight into coaching."
         )
 
-    has_setup = bool(goal_target or goal_current)
-    if is_first_session and has_setup:
-        greeting_instructions = (
-            f"You already know the user's goal target ({goal_target}) and current baseline ({goal_current}). "
-            f"Greet them warmly for their first session. Acknowledge their numbers and jump straight into coaching. "
-            f"One or two warm, direct sentences in {lang_name}."
+    if is_first and has_setup:
+        greeting = (
+            f"You know the patient's target ({goal_target}) and baseline ({goal_current}). "
+            f"Greet them and start coaching immediately. One or two warm sentences in {lang_name}."
         )
-    elif is_first_session:
-        greeting_instructions = coaching.get("first_therapist_greeting", f"Greet the user warmly and invite them to share what's on their mind. 1–2 sentences.")
+    elif is_first:
+        greeting = coaching.get("first_therapist_greeting", f"Greet the user warmly and invite them to share what's on their mind. 1–2 sentences.")
     elif is_checkin:
-        greeting_instructions = coaching.get("checkin_therapist_greeting", f"Greet the user and check in on their progress today. 1–2 sentences.")
+        greeting = coaching.get("checkin_therapist_greeting", f"Greet the user and check in on their progress today. 1–2 sentences.")
     else:
-        greeting_instructions = coaching.get("continue_therapist_greeting", f"Welcome the user back warmly. Reference the previous sessions and continue coaching. 1–2 sentences.")
+        greeting = coaching.get("continue_therapist_greeting", f"Welcome the user back warmly. Reference previous sessions and continue coaching. 1–2 sentences.")
 
-    await session.start(
-        agent=Agent(
-            instructions=f"""You are a warm, professional coach and therapist.
-Listen with empathy, then push the user toward concrete action.
-Keep every response to 2–3 sentences. Be direct, warm, and action-focused.
-Never diagnose or give medical advice. If the user is in crisis, encourage them to contact emergency services.
-IMPORTANT: Always respond in {lang_name}. Do not switch languages under any circumstances.{goal_section}{setup_section}{memory_section}{checkin_note}"""
-        ),
-        room=ctx.room,
+    instructions = (
+        f"You are a warm, professional coach and therapist.\n"
+        f"Listen with empathy, then push the user toward concrete action.\n"
+        f"Keep every response to 2–3 sentences. Be direct, warm, and action-focused.\n"
+        f"Never diagnose or give medical advice. If the user is in crisis, encourage them to contact emergency services.\n"
+        f"IMPORTANT: Always respond in {lang_name}."
+        f"{goal_section}{setup_section}{mem_section}{checkin_note}"
     )
 
-    session.generate_reply(instructions=f"{greeting_instructions} Respond in {lang_name}.")
+    try:
+        await session.start(
+            agent=Agent(instructions=instructions),
+            room=ctx.room,
+            participant=ios_user,
+        )
+        logger.info("Therapist session started ✓")
+    except Exception as e:
+        logger.error(f"Therapist session.start() failed: {e}", exc_info=True)
+        return
+
+    try:
+        handle = session.generate_reply(instructions=f"{greeting} Respond in {lang_name}.")
+        logger.info("Therapist greeting queued ✓")
+        await handle
+        logger.info("Therapist greeting delivered ✓")
+    except Exception as e:
+        logger.error(f"Therapist generate_reply() failed: {e}", exc_info=True)
 
 
 if __name__ == "__main__":
-    cli.run_app(WorkerOptions(entrypoint_fnc=entrypoint, worker_type=WorkerType.ROOM, agent_name="avatar-agent"))
+    cli.run_app(WorkerOptions(
+        entrypoint_fnc=entrypoint,
+        worker_type=WorkerType.ROOM,
+        agent_name="avatar-agent",
+    ))

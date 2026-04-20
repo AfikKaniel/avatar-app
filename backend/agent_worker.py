@@ -317,18 +317,27 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
     else:
         greeting_instructions = coaching.get("continue_twin_greeting", f"Welcome yourself back in first person. Reference the previous sessions briefly and continue coaching. One or two sentences.")
 
-    await session.start(
-        agent=Agent(
-            instructions=f"""You are the user's digital twin — a first-person AI version of themselves.
+    try:
+        await session.start(
+            agent=Agent(
+                instructions=f"""You are the user's digital twin — a first-person AI version of themselves.
 Speak entirely in first person, as if you ARE the user.
 Keep every response to 2–3 sentences maximum. Be direct and energetic.
 Never break character. Never say you are an AI.
 IMPORTANT: Always respond in {lang_name}. Do not switch languages under any circumstances.{goal_section}{setup_section}{memory_section}{checkin_note}"""
-        ),
-        room=ctx.room,
-    )
+            ),
+            room=ctx.room,
+        )
+        logger.info("AgentSession started ✓")
+    except Exception as e:
+        logger.error(f"session.start() failed: {e}", exc_info=True)
+        return
 
-    session.generate_reply(instructions=f"{greeting_instructions} Respond in {lang_name}.")
+    try:
+        session.generate_reply(instructions=f"{greeting_instructions} Respond in {lang_name}.")
+        logger.info("generate_reply() called ✓")
+    except Exception as e:
+        logger.error(f"generate_reply() failed: {e}", exc_info=True)
 
 
 async def run_therapist_session(ctx: JobContext, language: str = "en", memory: str = "", goal: str = "", goal_target: str = "", goal_current: str = "", is_checkin: bool = False):

@@ -228,60 +228,25 @@ async def run_digital_twin_session(ctx: JobContext, voice_id: str | None, photo_
     lang_name = LANGUAGE_NAMES.get(language, "English")
     logger.info(f"Starting digital twin session: voice_id={voice_id}, language={language}, goal={goal}")
 
-    # ── Download avatar face portrait ────────────────────────────────────────
-    # The iOS app uploads a Vision-cropped face portrait to Vercel Blob.
-    # We download it here for Hedra to animate.
-    avatar_image: Image.Image | None = None
-    try:
-        logger.info(f"Downloading avatar portrait from: {photo_url}")
-        req = urllib.request.Request(photo_url, headers={"User-Agent": "GagingAI/1.0"})
-        with urllib.request.urlopen(req, timeout=15) as response:
-            avatar_image = Image.open(BytesIO(response.read())).copy()
-        logger.info(f"Portrait downloaded: {avatar_image.size}")
-    except Exception as e:
-        logger.error(f"Failed to download portrait: {e}")
-        # Continue with no image — Hedra will use a placeholder or we run audio-only
+    logger.info(f"Starting audio-only digital twin (voice_id={voice_id})")
 
     session = AgentSession(
         vad=silero.VAD.load(
-            activation_threshold=0.65,   # lower = picks up softer speech faster
-            min_silence_duration=0.4,    # quicker to detect end of utterance
+            activation_threshold=0.65,
+            min_silence_duration=0.4,
         ),
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
         tts=elevenlabs.TTS(
             api_key=os.environ.get("ELEVENLABS_API_KEY"),
             voice_id=voice_id,
-            model="eleven_turbo_v2_5",   # lower latency → tighter lip-sync
+            model="eleven_turbo_v2_5",
         ),
         min_interruption_duration=1.2,
         min_interruption_words=2,
-        min_endpointing_delay=0.2,       # respond faster after user stops talking
+        min_endpointing_delay=0.2,
         max_endpointing_delay=3.0,
     )
-
-    # ── Start Hedra talking-head video ───────────────────────────────────────
-    # Hedra animates the face portrait to lip-sync with ElevenLabs TTS audio.
-    # If Hedra fails (missing API key, bad image, quota exceeded), the session
-    # continues as audio-only — voice responses still work, just no live video.
-    hedra_started = False
-    if avatar_image is not None:
-        try:
-            hedra_key = os.environ.get("HEDRA_API_KEY")
-            if not hedra_key:
-                logger.warning("HEDRA_API_KEY not set — Hedra video disabled")
-            else:
-                hedra_avatar = hedra.AvatarSession(avatar_image=avatar_image)
-                await hedra_avatar.start(session, room=ctx.room)
-                hedra_started = True
-                logger.info("Hedra avatar session started ✓")
-        except Exception as e:
-            logger.error(f"Hedra failed: {e} — falling back to audio-only session")
-    else:
-        logger.warning("No portrait image — running audio-only session")
-
-    if not hedra_started:
-        logger.info("Running audio-only digital twin (no Hedra video)")
 
     coaching = GOAL_COACHING.get(goal, {})
     goal_section = f"\n\n{coaching['twin_system']}" if coaching else ""

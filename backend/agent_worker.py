@@ -59,34 +59,50 @@ async def entrypoint(ctx: JobContext):
     goal_current = ""
     is_checkin   = False
 
-    def parse_meta(participant) -> bool:
+    def apply_meta(meta: dict) -> bool:
         nonlocal voice_id, photo_url, mode, language, memory, goal, goal_target, goal_current, is_checkin
+        mode         = meta.get("mode", "digital_twin")
+        voice_id     = meta.get("voice_id")
+        photo_url    = meta.get("photo_url")
+        language     = meta.get("language", "en")
+        memory       = meta.get("memory", "")
+        goal         = meta.get("goal", "")
+        goal_target  = meta.get("goal_target", "")
+        goal_current = meta.get("goal_current", "")
+        is_checkin   = meta.get("is_checkin", "0") == "1"
+        return True
+
+    def parse_meta(participant) -> bool:
         raw = participant.metadata
         if not raw:
             return False
         try:
-            meta         = json.loads(raw)
-            voice_id     = meta.get("voice_id")
-            photo_url    = meta.get("photo_url")
-            mode         = meta.get("mode", "digital_twin")
-            language     = meta.get("language", "en")
-            memory       = meta.get("memory", "")
-            goal         = meta.get("goal", "")
-            goal_target  = meta.get("goal_target", "")
-            goal_current = meta.get("goal_current", "")
-            is_checkin   = meta.get("is_checkin", "0") == "1"
-            logger.info(f"Parsed metadata from {participant.identity}: mode={mode}, language={language}, goal={goal}")
+            meta = json.loads(raw)
+            apply_meta(meta)
+            logger.info(f"Parsed metadata from participant {participant.identity}: mode={mode}")
             return True
         except Exception:
             return False
 
-    # First pass: check participants already in the room
-    for participant in ctx.room.remote_participants.values():
-        if parse_meta(participant):
-            break
+    # ── Try room metadata first (set at room creation, always available) ───────
+    room_raw = ctx.room.metadata
+    if room_raw:
+        try:
+            apply_meta(json.loads(room_raw))
+            logger.info(f"Parsed metadata from room: mode={mode}, language={language}")
+        except Exception as e:
+            logger.warning(f"Failed to parse room metadata: {e}")
+            mode = None  # reset so we fall through to participant check
+
+    # ── Fall back to participant metadata if room metadata didn't have mode ────
+    if mode is None:
+        # First pass: check participants already in the room
+        for participant in ctx.room.remote_participants.values():
+            if parse_meta(participant):
+                break
 
     if mode is None:
-        logger.info("No participant metadata yet — registering listeners…")
+        logger.info("No metadata yet — waiting for participant…")
         found = asyncio.Event()
 
         @ctx.room.on("participant_connected")
@@ -99,8 +115,7 @@ async def entrypoint(ctx: JobContext):
             if isinstance(participant, rtc.RemoteParticipant) and parse_meta(participant):
                 found.set()
 
-        # Second pass: participant may have joined between ctx.connect() and
-        # listener registration — check again to close the race window.
+        # Second pass: close race window between ctx.connect() and listener registration
         for participant in ctx.room.remote_participants.values():
             if parse_meta(participant):
                 found.set()

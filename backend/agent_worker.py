@@ -378,15 +378,8 @@ async def run_therapist_session(
         max_endpointing_delay=5.0,
     )
 
-    try:
-        hedra_key = os.environ.get("HEDRA_API_KEY")
-        if hedra_key:
-            face_img = crop_face_portrait(avatar_image)
-            hedra_avatar = hedra.AvatarSession(avatar_image=face_img)
-            await hedra_avatar.start(session, room=ctx.room)
-            logger.info("Therapist Hedra started ✓")
-    except Exception as e:
-        logger.error(f"Therapist Hedra failed: {e} — audio-only")
+    # Hedra disabled — same reason as digital twin (DataStreamAudioOutput blocks TTS)
+    logger.info("Therapist running audio-only (Hedra disabled)")
 
     coaching      = GOAL_COACHING.get(goal, {})
     goal_section  = f"\n\n{coaching.get('therapist_system', '')}" if coaching.get("therapist_system") else ""

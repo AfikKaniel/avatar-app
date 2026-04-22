@@ -1,8 +1,8 @@
-livekit-agents>=0.12.0
-livekit-plugins-openai>=0.12.0
-livekit-plugins-elevenlabs>=0.12.0
-livekit-plugins-anthropic>=0.12.0
-livekit-plugins-hedra>=0.12.0
-livekit-plugins-silero>=0.12.0
+livekit-agents==1.3.12
+livekit-plugins-openai==1.3.12
+livekit-plugins-elevenlabs==1.3.12
+livekit-plugins-anthropic==1.3.12
+livekit-plugins-hedra==1.3.12
+livekit-plugins-silero==1.3.12
 python-dotenv
 Pillow

@@ -258,13 +258,26 @@ async def run_digital_twin_session(
         logger.error("voice_id is missing — cannot start digital twin session")
         return
 
+    # ── Trim env vars to avoid whitespace/newline bugs (same root cause as FAL_KEY) ─
+    el_key  = (os.environ.get("ELEVENLABS_API_KEY") or "").strip()
+    oai_key = (os.environ.get("OPENAI_API_KEY")     or "").strip()
+
+    if not el_key:
+        logger.error("ELEVENLABS_API_KEY is empty — cannot produce TTS audio")
+        return
+    if not oai_key:
+        logger.error("OPENAI_API_KEY is empty — cannot run STT")
+        return
+
+    logger.info(f"API keys loaded — ElevenLabs prefix={el_key[:6]}… OpenAI prefix={oai_key[:6]}…")
+
     # ── AgentSession (VAD → STT → LLM → TTS) ─────────────────────────────────
     session = AgentSession(
         vad=_VAD or silero.VAD.load(),
-        stt=openai.STT(),
+        stt=openai.STT(api_key=oai_key),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
         tts=elevenlabs.TTS(
-            api_key=os.environ.get("ELEVENLABS_API_KEY"),
+            api_key=el_key,
             voice_id=voice_id,
             model="eleven_turbo_v2_5",
         ),
@@ -275,12 +288,6 @@ async def run_digital_twin_session(
     )
     logger.info("AgentSession created ✓")
 
-    # ── Hedra lip-sync avatar ─────────────────────────────────────────────────
-    # DISABLED: hedra.AvatarSession.start() redirects session.output.audio to
-    # DataStreamAudioOutput(wait_remote_track=KIND_VIDEO). If Hedra's agent
-    # doesn't publish a video track in time, all TTS audio is blocked forever
-    # and the user hears nothing. Confirmed by reading livekit-plugins-hedra source.
-    # Hedra will be re-enabled once we add a proper video-track timeout + fallback.
     logger.info("Running audio-only digital twin (Hedra disabled — audio guaranteed)")
 
     # ── Build system prompt ────────────────────────────────────────────────────
@@ -336,15 +343,15 @@ async def run_digital_twin_session(
         logger.error(f"session.start() failed: {e}", exc_info=True)
         return
 
-    # ── Fire opening greeting ─────────────────────────────────────────────────
+    # Give RoomIO._init_task time to publish the audio track and wait for
+    # iOS client subscription before queuing TTS (avoids capture_frame blocking).
+    await asyncio.sleep(1.5)
+    logger.info("Post-start delay done — queuing greeting…")
+
+    # ── Fire opening greeting (fire-and-forget; session handles delivery) ────
     try:
-        handle = session.generate_reply(
-            instructions=f"{greeting} Respond in {lang_name}."
-        )
+        session.generate_reply(instructions=f"{greeting} Respond in {lang_name}.")
         logger.info("Greeting queued ✓")
-        # Await the handle so the greeting completes before the function returns
-        await handle
-        logger.info("Greeting delivered ✓")
     except Exception as e:
         logger.error(f"generate_reply() failed: {e}", exc_info=True)
 
@@ -367,9 +374,14 @@ async def run_therapist_session(
     therapist_voice_id = os.environ.get("THERAPIST_VOICE_ID", DEFAULT_THERAPIST_VOICE_ID)
     avatar_image = load_therapist_image()
 
+    oai_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+    if not oai_key:
+        logger.error("OPENAI_API_KEY is empty — cannot run therapist session")
+        return
+
     session = AgentSession(
         vad=_VAD or silero.VAD.load(),
-        stt=openai.STT(),
+        stt=openai.STT(api_key=oai_key),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
         tts=openai.TTS(model="tts-1", voice="nova"),
         min_interruption_duration=2.0,
@@ -432,11 +444,12 @@ async def run_therapist_session(
         logger.error(f"Therapist session.start() failed: {e}", exc_info=True)
         return
 
+    await asyncio.sleep(1.5)
+    logger.info("Therapist post-start delay done — queuing greeting…")
+
     try:
-        handle = session.generate_reply(instructions=f"{greeting} Respond in {lang_name}.")
+        session.generate_reply(instructions=f"{greeting} Respond in {lang_name}.")
         logger.info("Therapist greeting queued ✓")
-        await handle
-        logger.info("Therapist greeting delivered ✓")
     except Exception as e:
         logger.error(f"Therapist generate_reply() failed: {e}", exc_info=True)
 

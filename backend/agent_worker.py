@@ -11,6 +11,7 @@ from PIL import Image, ImageDraw
 
 from livekit import rtc
 from livekit.agents import Agent, AgentSession, JobContext, WorkerOptions, WorkerType, cli
+from livekit.agents.voice.room_io import RoomOptions
 from livekit.plugins import anthropic, elevenlabs, hedra, openai, silero
 
 logging.basicConfig(level=logging.INFO)
@@ -342,7 +343,7 @@ async def run_digital_twin_session(
         await session.start(
             agent=Agent(instructions=instructions),
             room=ctx.room,
-            participant=ios_user,
+            room_options=RoomOptions(participant_identity=ios_user.identity),
         )
         logger.info("AgentSession started ✓")
     except Exception as e:
@@ -445,7 +446,7 @@ async def run_therapist_session(
         await session.start(
             agent=Agent(instructions=instructions),
             room=ctx.room,
-            participant=ios_user,
+            room_options=RoomOptions(participant_identity=ios_user.identity),
         )
         logger.info("Therapist session started ✓")
     except Exception as e:

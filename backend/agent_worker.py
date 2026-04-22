@@ -24,9 +24,13 @@ DEFAULT_THERAPIST_VOICE_ID = "21m00Tcm4TlvDq8ikWAM"
 
 # ── Pre-load Silero VAD once at startup (not per-session) ─────────────────────
 # This avoids a 5-10s model download delay on the first session.
-logger.info("Pre-loading Silero VAD model…")
-_VAD = silero.VAD.load(activation_threshold=0.65, min_silence_duration=0.4)
-logger.info("Silero VAD ready ✓")
+try:
+    logger.info("Pre-loading Silero VAD model…")
+    _VAD = silero.VAD.load(activation_threshold=0.65, min_silence_duration=0.4)
+    logger.info("Silero VAD ready ✓")
+except Exception as _vad_err:
+    logger.error(f"Silero VAD pre-load failed: {_vad_err} — will load lazily per session")
+    _VAD = None
 
 
 # ── Image helpers ──────────────────────────────────────────────────────────────
@@ -256,7 +260,7 @@ async def run_digital_twin_session(
 
     # ── AgentSession (VAD → STT → LLM → TTS) ─────────────────────────────────
     session = AgentSession(
-        vad=_VAD,
+        vad=_VAD or silero.VAD.load(),
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
         tts=elevenlabs.TTS(
@@ -272,30 +276,12 @@ async def run_digital_twin_session(
     logger.info("AgentSession created ✓")
 
     # ── Hedra lip-sync avatar ─────────────────────────────────────────────────
-    hedra_started = False
-    if photo_url:
-        try:
-            hedra_key = os.environ.get("HEDRA_API_KEY")
-            if not hedra_key:
-                logger.warning("HEDRA_API_KEY not set — skipping Hedra")
-            else:
-                full_body = download_image(photo_url)
-                if full_body:
-                    # Crop top 35% to get a face portrait — Hedra needs a face, not full body
-                    face_img = crop_face_portrait(full_body)
-                    logger.info(f"Face portrait cropped: {face_img.size}")
-                    hedra_avatar = hedra.AvatarSession(avatar_image=face_img)
-                    await hedra_avatar.start(session, room=ctx.room)
-                    hedra_started = True
-                    logger.info("Hedra avatar session started ✓")
-                else:
-                    logger.warning("Could not download avatar image — no Hedra video")
-        except Exception as e:
-            logger.error(f"Hedra setup failed: {e}", exc_info=True)
-            logger.info("Continuing as audio-only (Hedra failed)")
-
-    if not hedra_started:
-        logger.info("Running audio-only digital twin (no Hedra video)")
+    # DISABLED: hedra.AvatarSession.start() redirects session.output.audio to
+    # DataStreamAudioOutput(wait_remote_track=KIND_VIDEO). If Hedra's agent
+    # doesn't publish a video track in time, all TTS audio is blocked forever
+    # and the user hears nothing. Confirmed by reading livekit-plugins-hedra source.
+    # Hedra will be re-enabled once we add a proper video-track timeout + fallback.
+    logger.info("Running audio-only digital twin (Hedra disabled — audio guaranteed)")
 
     # ── Build system prompt ────────────────────────────────────────────────────
     coaching     = GOAL_COACHING.get(goal, {})
@@ -382,7 +368,7 @@ async def run_therapist_session(
     avatar_image = load_therapist_image()
 
     session = AgentSession(
-        vad=_VAD,
+        vad=_VAD or silero.VAD.load(),
         stt=openai.STT(),
         llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
         tts=openai.TTS(model="tts-1", voice="nova"),

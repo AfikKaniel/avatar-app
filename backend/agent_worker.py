@@ -295,7 +295,28 @@ async def run_digital_twin_session(
     )
     logger.info("AgentSession created ✓")
 
-    logger.info("Running audio-only digital twin (Hedra disabled — audio guaranteed)")
+    # ── Hedra lip-sync — start BEFORE session.start() so Hedra sets output.audio first ──
+    # When Hedra is active, session.start() sees output.audio already set → RoomIO skips
+    # creating a duplicate audio track. Audio flows: TTS → DataStream → Hedra → video+audio.
+    hedra_key = (os.environ.get("HEDRA_API_KEY") or "").strip()
+    if hedra_key and photo_url:
+        logger.info("Downloading avatar image for Hedra face portrait…")
+        avatar_img = download_image(photo_url)
+        if avatar_img:
+            face = crop_face_portrait(avatar_img)
+            try:
+                hedra_sess = hedra.AvatarSession(avatar_image=face, api_key=hedra_key)
+                await hedra_sess.start(agent_session=session, room=ctx.room)
+                logger.info("Hedra lip-sync started ✓ — audio routed through Hedra video track")
+            except Exception as e:
+                logger.error(f"Hedra start failed ({e}) — falling back to direct audio")
+        else:
+            logger.warning("Could not download avatar image — Hedra disabled for this session")
+    else:
+        logger.info(
+            f"Hedra skipped — HEDRA_API_KEY={'set' if hedra_key else 'MISSING'}, "
+            f"photo_url={'set' if photo_url else 'MISSING'} — running direct audio"
+        )
 
     # ── Build system prompt ────────────────────────────────────────────────────
     coaching     = GOAL_COACHING.get(goal, {})

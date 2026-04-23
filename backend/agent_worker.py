@@ -168,8 +168,6 @@ async def entrypoint(ctx: JobContext):
         logger.error("No iOS user — aborting session")
         return
 
-    # Give iOS a moment to fully subscribe to the agent's audio track
-    await asyncio.sleep(0.8)
     logger.info(f"Starting session with participant: {ios_user.identity}")
 
     # ── 3. Run the appropriate session type ─────────────────────────────────────
@@ -235,6 +233,36 @@ Your patient is actively trying to quit smoking. Your job is to push them forwar
         "continue_therapist_greeting": "Welcome your patient back warmly. Reference their movement progress from previous sessions and dive straight into coaching. Two sentences.",
     },
 }
+
+
+# ── Agent subclasses with on_enter() for proactive greeting ───────────────────
+
+class _TwinAgent(Agent):
+    """Digital twin that speaks a greeting the moment the activity starts."""
+    def __init__(self, *, instructions: str, greeting: str, lang_name: str):
+        super().__init__(instructions=instructions)
+        self._greeting  = greeting
+        self._lang_name = lang_name
+
+    async def on_enter(self) -> None:
+        logger.info("TwinAgent.on_enter — sending greeting…")
+        self.session.generate_reply(
+            instructions=f"{self._greeting} Respond in {self._lang_name}."
+        )
+
+
+class _TherapistAgent(Agent):
+    """Therapist that speaks a greeting the moment the activity starts."""
+    def __init__(self, *, instructions: str, greeting: str, lang_name: str):
+        super().__init__(instructions=instructions)
+        self._greeting  = greeting
+        self._lang_name = lang_name
+
+    async def on_enter(self) -> None:
+        logger.info("TherapistAgent.on_enter — sending greeting…")
+        self.session.generate_reply(
+            instructions=f"{self._greeting} Respond in {self._lang_name}."
+        )
 
 
 # ── Digital Twin session ───────────────────────────────────────────────────────
@@ -359,10 +387,10 @@ async def run_digital_twin_session(
         f"{goal_section}{setup_section}{mem_section}{checkin_note}"
     )
 
-    # ── Start session targeted at the iOS participant ─────────────────────────
+    # ── Start session — on_enter() fires the greeting automatically ─────────
     try:
         await session.start(
-            agent=Agent(instructions=instructions),
+            agent=_TwinAgent(instructions=instructions, greeting=greeting, lang_name=lang_name),
             room=ctx.room,
             room_options=RoomOptions(participant_identity=ios_user.identity),
         )
@@ -370,18 +398,6 @@ async def run_digital_twin_session(
     except Exception as e:
         logger.error(f"session.start() failed: {e}", exc_info=True)
         return
-
-    # Give RoomIO._init_task time to publish the audio track and wait for
-    # iOS client subscription before queuing TTS (avoids capture_frame blocking).
-    await asyncio.sleep(1.5)
-    logger.info("Post-start delay done — queuing greeting…")
-
-    # ── Fire opening greeting (fire-and-forget; session handles delivery) ────
-    try:
-        session.generate_reply(instructions=f"{greeting} Respond in {lang_name}.")
-        logger.info("Greeting queued ✓")
-    except Exception as e:
-        logger.error(f"generate_reply() failed: {e}", exc_info=True)
 
 
 # ── Therapist session ──────────────────────────────────────────────────────────
@@ -469,7 +485,7 @@ async def run_therapist_session(
 
     try:
         await session.start(
-            agent=Agent(instructions=instructions),
+            agent=_TherapistAgent(instructions=instructions, greeting=greeting, lang_name=lang_name),
             room=ctx.room,
             room_options=RoomOptions(participant_identity=ios_user.identity),
         )
@@ -477,15 +493,6 @@ async def run_therapist_session(
     except Exception as e:
         logger.error(f"Therapist session.start() failed: {e}", exc_info=True)
         return
-
-    await asyncio.sleep(1.5)
-    logger.info("Therapist post-start delay done — queuing greeting…")
-
-    try:
-        session.generate_reply(instructions=f"{greeting} Respond in {lang_name}.")
-        logger.info("Therapist greeting queued ✓")
-    except Exception as e:
-        logger.error(f"Therapist generate_reply() failed: {e}", exc_info=True)
 
 
 if __name__ == "__main__":

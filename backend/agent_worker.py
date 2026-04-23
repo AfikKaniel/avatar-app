@@ -325,16 +325,19 @@ async def run_digital_twin_session(
     # creating a duplicate audio track. Audio flows: TTS → DataStream → Hedra → video+audio.
     hedra_key = (os.environ.get("HEDRA_API_KEY") or "").strip()
     if hedra_key and photo_url:
+        logger.info(f"Hedra key prefix: {hedra_key[:8]}…  photo_url: {photo_url[:60]}…")
         logger.info("Downloading avatar image for Hedra face portrait…")
         avatar_img = download_image(photo_url)
         if avatar_img:
             face = crop_face_portrait(avatar_img)
+            logger.info(f"Face portrait ready: {face.size} — posting to Hedra…")
             try:
                 hedra_sess = hedra.AvatarSession(avatar_image=face, api_key=hedra_key)
                 await hedra_sess.start(agent_session=session, room=ctx.room)
-                logger.info("Hedra lip-sync started ✓ — audio routed through Hedra video track")
+                logger.info("Hedra lip-sync started ✓ — Hedra is joining room as avatar agent")
             except Exception as e:
-                logger.error(f"Hedra start failed ({e}) — falling back to direct audio")
+                logger.error(f"Hedra start FAILED: {type(e).__name__}: {e}", exc_info=True)
+                logger.warning("Falling back to direct audio — avatar will be static on iOS")
         else:
             logger.warning("Could not download avatar image — Hedra disabled for this session")
     else:

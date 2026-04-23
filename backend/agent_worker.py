@@ -269,13 +269,20 @@ async def run_digital_twin_session(
         logger.error("OPENAI_API_KEY is empty — cannot run STT")
         return
 
-    logger.info(f"API keys loaded — ElevenLabs prefix={el_key[:6]}… OpenAI prefix={oai_key[:6]}…")
+    ant_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
+    if not ant_key:
+        logger.error("ANTHROPIC_API_KEY is empty — LLM will not run")
+        return
+
+    logger.info(
+        f"API keys OK — ElevenLabs={el_key[:6]}… OpenAI={oai_key[:6]}… Anthropic={ant_key[:6]}…"
+    )
 
     # ── AgentSession (VAD → STT → LLM → TTS) ─────────────────────────────────
     session = AgentSession(
         vad=_VAD or silero.VAD.load(),
         stt=openai.STT(api_key=oai_key),
-        llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
+        llm=anthropic.LLM(model="claude-haiku-4-5-20251001", api_key=ant_key),
         tts=elevenlabs.TTS(
             api_key=el_key,
             voice_id=voice_id,
@@ -375,14 +382,20 @@ async def run_therapist_session(
     avatar_image = load_therapist_image()
 
     oai_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+    ant_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
     if not oai_key:
         logger.error("OPENAI_API_KEY is empty — cannot run therapist session")
         return
+    if not ant_key:
+        logger.error("ANTHROPIC_API_KEY is empty — cannot run therapist session")
+        return
+
+    logger.info(f"Therapist API keys OK — OpenAI={oai_key[:6]}… Anthropic={ant_key[:6]}…")
 
     session = AgentSession(
         vad=_VAD or silero.VAD.load(),
         stt=openai.STT(api_key=oai_key),
-        llm=anthropic.LLM(model="claude-haiku-4-5-20251001"),
+        llm=anthropic.LLM(model="claude-haiku-4-5-20251001", api_key=ant_key),
         tts=openai.TTS(model="tts-1", voice="nova"),
         min_interruption_duration=2.0,
         min_interruption_words=2,

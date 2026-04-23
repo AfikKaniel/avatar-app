@@ -148,25 +148,29 @@ async def entrypoint(ctx: JobContext):
         except Exception as e:
             logger.warning(f"Failed to parse room metadata: {e}")
 
-    # Fallback: try participant metadata
-    if mode == "digital_twin" and not voice_id:
-        for p in ctx.room.remote_participants.values():
-            raw = p.metadata
-            if raw:
-                try:
-                    apply_meta(json.loads(raw))
-                    logger.info(f"Participant metadata parsed: mode={mode}")
-                    break
-                except Exception:
-                    pass
-
-    logger.info(f"Session config — mode={mode}, voice_id={voice_id}, photo_url={'set' if photo_url else 'none'}")
-
     # ── 2. Wait for the iOS user to be in the room ──────────────────────────────
+    # NOTE: participant metadata fallback MUST come after wait_for_user() because the
+    # iOS participant is not in the room yet when the agent first connects. Reading
+    # ctx.room.remote_participants before this point always returns an empty dict.
     ios_user = await wait_for_user(ctx)
     if ios_user is None:
         logger.error("No iOS user — aborting session")
         return
+
+    # Fallback: read voice_id / photo_url from the iOS participant's JWT metadata.
+    # This is the primary delivery path when LiveKit room metadata is not populated.
+    if not voice_id:
+        raw = ios_user.metadata
+        if raw:
+            try:
+                apply_meta(json.loads(raw))
+                logger.info(f"iOS participant metadata parsed: mode={mode}, voice_id={voice_id}")
+            except Exception as e:
+                logger.warning(f"Failed to parse iOS participant metadata: {e}")
+        else:
+            logger.warning("iOS participant has no metadata — voice_id will remain None")
+
+    logger.info(f"Session config — mode={mode}, voice_id={voice_id}, photo_url={'set' if photo_url else 'none'}")
 
     logger.info(f"Starting session with participant: {ios_user.identity}")
 

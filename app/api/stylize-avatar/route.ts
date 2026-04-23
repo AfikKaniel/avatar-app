@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 
-export const maxDuration = 60; // Stability AI can take up to ~30s
+export const maxDuration = 60;
 
 /**
  * POST /api/stylize-avatar
  * Body: multipart/form-data with `photo` file
- * Returns: JPEG image bytes + X-Stylize-Status header for debugging
+ * Returns: JPEG image bytes + X-Stylize-Status header
+ *
+ * Uses Stability AI SD3-Large-Turbo img2img to transform the user's face photo
+ * into a clean stylized avatar portrait that Hedra animates for the talking head.
+ * Falls back to the original photo on any error so Hedra still has something to work with.
+ *
+ * Key fix from previous version: model must be "sd3-large-turbo" not "sd3-turbo".
+ * sd3-turbo does NOT support image-to-image mode.
  */
 export async function POST(req: NextRequest) {
   const apiKey = process.env.STABILITY_API_KEY;
@@ -16,67 +23,67 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "photo is required" }, { status: 400 });
   }
 
-  function originalResponse(reason: string) {
-    console.warn(`[stylize-avatar] fallback(${reason})`);
-    return photo!.arrayBuffer().then((ab) => {
-      const buffer = Buffer.from(ab);
-      return new NextResponse(buffer, {
-        headers: {
-          "Content-Type": photo!.type || "image/jpeg",
-          "X-Stylize-Status": `fallback:${reason}`,
-        },
-      });
+  async function fallback(reason: string): Promise<NextResponse> {
+    console.warn(`[stylize-avatar] fallback: ${reason}`);
+    const ab = await photo!.arrayBuffer();
+    return new NextResponse(Buffer.from(ab), {
+      headers: {
+        "Content-Type": photo!.type || "image/jpeg",
+        "X-Stylize-Status": `fallback:${reason}`,
+      },
     });
   }
 
-  if (!apiKey) {
-    return originalResponse("no-key");
-  }
+  if (!apiKey) return fallback("no-stability-key");
 
   const body = new FormData();
   body.append("image", photo);
   body.append(
     "prompt",
-    "same person, preserve exact facial features and identity, professional digital avatar portrait, " +
-    "cinematic studio lighting, clean dark navy blue background, sharp focus, high quality skin"
+    "close-up face portrait of the same person, exact facial identity preserved, " +
+    "eyes open looking directly forward with calm confidence, " +
+    "smooth luminous bioluminescent skin with soft blue-white inner glow, " +
+    "gentle cyan and purple rim lighting, dark void background, " +
+    "stylized cinematic 3D CGI avatar render, head and shoulders only, 4k, sharp focus"
+  );
+  body.append(
+    "negative_prompt",
+    "different person, altered identity, sunglasses, closed eyes, " +
+    "full body, torso below chest, circuit patterns, HUD overlay, " +
+    "cartoon, anime, 2D illustration, watermark, text, blurry"
   );
   body.append("mode", "image-to-image");
-  body.append("model", "sd3-turbo");
-  body.append("strength", "0.25");
+  body.append("model", "sd3-large-turbo");
+  body.append("strength", "0.35");
   body.append("output_format", "jpeg");
 
-  let res: Response;
   try {
-    res = await fetch("https://api.stability.ai/v2beta/stable-image/generate/sd3", {
+    const res = await fetch("https://api.stability.ai/v2beta/stable-image/generate/sd3", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
-        Accept: "application/json",
+        Accept: "image/*",
       },
       body,
     });
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error(`[stylize-avatar] Stability AI ${res.status}:`, err.slice(0, 300));
+      return fallback(`stability-${res.status}`);
+    }
+
+    const imageBuffer = Buffer.from(await res.arrayBuffer());
+    console.log(`[stylize-avatar] success — ${imageBuffer.length} bytes`);
+
+    return new NextResponse(imageBuffer, {
+      headers: {
+        "Content-Type": "image/jpeg",
+        "X-Stylize-Status": "success",
+      },
+    });
   } catch (err) {
-    console.error("[stylize-avatar] Network error:", err);
-    return originalResponse(`network-error:${String(err).slice(0, 80)}`);
+    console.error("[stylize-avatar] network error:", err);
+    return fallback(`network:${String(err).slice(0, 80)}`);
   }
-
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error(`[stylize-avatar] Stability AI ${res.status}:`, errText);
-    return originalResponse(`api-${res.status}`);
-  }
-
-  const data = await res.json();
-  if (!data.image) {
-    console.error("[stylize-avatar] No image in response:", JSON.stringify(data).slice(0, 200));
-    return originalResponse("no-image-field");
-  }
-
-  const buffer = Buffer.from(data.image, "base64");
-  return new NextResponse(buffer, {
-    headers: {
-      "Content-Type": "image/jpeg",
-      "X-Stylize-Status": "success",
-    },
-  });
 }

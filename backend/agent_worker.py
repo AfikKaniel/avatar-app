@@ -342,21 +342,34 @@ async def run_digital_twin_session(
                 def _log_join(p: rtc.RemoteParticipant):
                     logger.info(f"Participant joined room: identity={p.identity}")
 
-                # Wait for hedra-avatar-agent to actually join before starting session.
-                # DataStreamAudioOutput.wait_remote_track blocks ALL TTS audio until
-                # Hedra's video track appears. If we proceed without Hedra, voice is
-                # silently blocked forever. This loop detects that and resets to direct audio.
+                # Wait for hedra-avatar-agent to join AND publish its video track.
+                # DataStreamAudioOutput sets wait_remote_track=KIND_VIDEO, which means
+                # capture_frame() blocks (via asyncio.shield) until the video track appears.
+                # Checking only for participant join is insufficient — Hedra may join the
+                # room before its video track is ready, leaving TTS permanently blocked.
+                # We mirror the same condition as DataStreamAudioOutput: video track published.
                 _HEDRA_ID = "hedra-avatar-agent"
-                for _i in range(30):   # 30 × 0.5s = 15 seconds max
-                    if any(p.identity == _HEDRA_ID
-                           for p in ctx.room.remote_participants.values()):
-                        hedra_active = True
-                        logger.info(f"Hedra agent joined after {(_i+1)*0.5:.1f}s ✓ — lip-sync video enabled")
-                        break
+                for _i in range(60):   # 60 × 0.5s = 30 seconds max
+                    hedra_p = next(
+                        (p for p in ctx.room.remote_participants.values()
+                         if p.identity == _HEDRA_ID),
+                        None,
+                    )
+                    if hedra_p:
+                        has_video = any(
+                            pub.kind == rtc.TrackKind.KIND_VIDEO
+                            for pub in hedra_p.track_publications.values()
+                        )
+                        if has_video:
+                            hedra_active = True
+                            logger.info(f"Hedra video track ready after {(_i+1)*0.5:.1f}s ✓ — lip-sync enabled")
+                            break
+                        else:
+                            logger.debug(f"Hedra participant joined but no video track yet (attempt {_i+1}/60)…")
                     await asyncio.sleep(0.5)
 
                 if not hedra_active:
-                    logger.warning("Hedra agent did NOT join within 15s — resetting audio to direct output so voice works")
+                    logger.warning("Hedra video track NOT ready within 30s — resetting to direct audio output so voice works")
                     session.output.audio = None   # let session.start() use default RoomAudioOutput
 
             except Exception as e:

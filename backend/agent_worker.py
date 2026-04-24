@@ -324,22 +324,45 @@ async def run_digital_twin_session(
     # When Hedra is active, session.start() sees output.audio already set → RoomIO skips
     # creating a duplicate audio track. Audio flows: TTS → DataStream → Hedra → video+audio.
     hedra_key = (os.environ.get("HEDRA_API_KEY") or "").strip()
+    hedra_active = False   # True only if Hedra API call succeeded AND agent joined room
+
     if hedra_key and photo_url:
         logger.info(f"Hedra key prefix: {hedra_key[:8]}…  photo_url: {photo_url[:60]}…")
-        logger.info("Downloading avatar image for Hedra face portrait…")
         avatar_img = download_image(photo_url)
         if avatar_img:
             face = crop_face_portrait(avatar_img)
-            logger.info(f"Face portrait ready: {face.size} — posting to Hedra…")
+            logger.info(f"Face portrait ready: {face.size} — posting to Hedra API…")
             try:
                 hedra_sess = hedra.AvatarSession(avatar_image=face, api_key=hedra_key)
                 await hedra_sess.start(agent_session=session, room=ctx.room)
-                logger.info("Hedra lip-sync started ✓ — Hedra is joining room as avatar agent")
+                logger.info("Hedra API call succeeded — waiting up to 15s for hedra-avatar-agent to join room…")
+
+                # Log every participant that joins so we can see if Hedra's server arrives
+                @ctx.room.on("participant_connected")
+                def _log_join(p: rtc.RemoteParticipant):
+                    logger.info(f"Participant joined room: identity={p.identity}")
+
+                # Wait for hedra-avatar-agent to actually join before starting session.
+                # DataStreamAudioOutput.wait_remote_track blocks ALL TTS audio until
+                # Hedra's video track appears. If we proceed without Hedra, voice is
+                # silently blocked forever. This loop detects that and resets to direct audio.
+                _HEDRA_ID = "hedra-avatar-agent"
+                for _i in range(30):   # 30 × 0.5s = 15 seconds max
+                    if any(p.identity == _HEDRA_ID
+                           for p in ctx.room.remote_participants.values()):
+                        hedra_active = True
+                        logger.info(f"Hedra agent joined after {(_i+1)*0.5:.1f}s ✓ — lip-sync video enabled")
+                        break
+                    await asyncio.sleep(0.5)
+
+                if not hedra_active:
+                    logger.warning("Hedra agent did NOT join within 15s — resetting audio to direct output so voice works")
+                    session.output.audio = None   # let session.start() use default RoomAudioOutput
+
             except Exception as e:
                 logger.error(f"Hedra start FAILED: {type(e).__name__}: {e}", exc_info=True)
-                logger.warning("Falling back to direct audio — avatar will be static on iOS")
         else:
-            logger.warning("Could not download avatar image — Hedra disabled for this session")
+            logger.warning("Could not download avatar image — Hedra disabled")
     else:
         logger.info(
             f"Hedra skipped — HEDRA_API_KEY={'set' if hedra_key else 'MISSING'}, "

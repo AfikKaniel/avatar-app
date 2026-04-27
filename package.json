@@ -10,11 +10,15 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",
     "@mediapipe/tasks-vision": "^0.10.32",
+    "@types/pdf-parse": "^1.1.5",
     "@vercel/blob": "^2.3.1",
     "@vercel/postgres": "^0.10.0",
+    "jszip": "^3.10.1",
     "livekit-client": "^2.5.8",
     "livekit-server-sdk": "^2.15.0",
+    "mammoth": "^1.12.0",
     "next": "^16.1.6",
+    "pdf-parse": "^2.4.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

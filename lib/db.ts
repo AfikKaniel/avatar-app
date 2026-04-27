@@ -104,6 +104,22 @@ export async function ensureSchema() {
       updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+
+  // Avatar platform keys — single admin row (id = 1)
+  await sql`
+    CREATE TABLE IF NOT EXISTS avatar_secrets (
+      id             INTEGER PRIMARY KEY DEFAULT 1,
+      hedra_key      TEXT,
+      hedra_secret   TEXT,
+      stability_key  TEXT,
+      fal_key        TEXT,
+      elevenlabs_key TEXT,
+      livekit_key    TEXT,
+      livekit_secret TEXT,
+      livekit_url    TEXT,
+      updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
 }
 
 export async function logSession(data: {

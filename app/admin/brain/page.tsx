@@ -6,8 +6,19 @@ const ADMIN_USER_ID = "gaging-global";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type Tab = "config" | "knowledge" | "connections" | "test" | "map";
+type Tab = "config" | "knowledge" | "connections" | "avatar" | "test" | "map";
 type KeyStatus = "idle" | "testing" | "valid" | "invalid";
+
+interface AvatarSecrets {
+  hedraKey: string | null;      hedraSet: boolean;
+  hedraSecret: string | null;   hedraSecretSet: boolean;
+  stabilityKey: string | null;  stabilitySet: boolean;
+  falKey: string | null;        falSet: boolean;
+  elevenlabsKey: string | null; elevenlabsSet: boolean;
+  livekitKey: string | null;
+  livekitSecret: string | null;
+  livekitUrl: string | null;    livekitSet: boolean;
+}
 
 interface BrainConfig {
   personaPrompt: string;
@@ -129,13 +140,31 @@ export default function BrainAdminPage() {
   const [ragThreshold, setRagThreshold]   = useState(0.25);
   const [secretsSaving, setSecretsSaving] = useState(false);
 
-  // Live key validation
+  // Live key validation — brain
   const [openaiStatus,    setOpenaiStatus]    = useState<KeyStatus>("idle");
   const [anthropicStatus, setAnthropicStatus] = useState<KeyStatus>("idle");
   const [openaiLatency,   setOpenaiLatency]   = useState<number | null>(null);
   const [anthropicLatency,setAnthropicLatency]= useState<number | null>(null);
   const [openaiError,     setOpenaiError]     = useState<string | null>(null);
   const [anthropicError,  setAnthropicError]  = useState<string | null>(null);
+
+  // Avatar connections state
+  const [avatarSecrets,     setAvatarSecrets]     = useState<AvatarSecrets | null>(null);
+  const [avatarSaving,      setAvatarSaving]      = useState(false);
+  const [newHedraKey,       setNewHedraKey]       = useState("");
+  const [newHedraSecret,    setNewHedraSecret]    = useState("");
+  const [newStabilityKey,   setNewStabilityKey]   = useState("");
+  const [newFalKey,         setNewFalKey]         = useState("");
+  const [newElevenlabsKey,  setNewElevenlabsKey]  = useState("");
+  const [newLivekitKey,     setNewLivekitKey]     = useState("");
+  const [newLivekitSecret,  setNewLivekitSecret]  = useState("");
+  const [newLivekitUrl,     setNewLivekitUrl]     = useState("");
+
+  // Live key validation — avatar
+  type AvatarProvider = "hedra" | "elevenlabs" | "stability" | "fal" | "livekit";
+  const [avStatus,  setAvStatus]  = useState<Record<AvatarProvider, KeyStatus>>({ hedra:"idle", elevenlabs:"idle", stability:"idle", fal:"idle", livekit:"idle" });
+  const [avLatency, setAvLatency] = useState<Record<AvatarProvider, number | null>>({ hedra:null, elevenlabs:null, stability:null, fal:null, livekit:null });
+  const [avError,   setAvError]   = useState<Record<AvatarProvider, string | null>>({ hedra:null, elevenlabs:null, stability:null, fal:null, livekit:null });
 
   // Paste text state
   const [pasteOpen, setPasteOpen]     = useState(false);
@@ -208,6 +237,83 @@ export default function BrainAdminPage() {
 
     return () => clearInterval(id);
   }, [tab, secrets, testKey, RETEST_INTERVAL_MS]);
+
+  // ── Avatar key validation ──────────────────────────────────────────────────
+
+  const testAvatarKey = useCallback(async (provider: AvatarProvider) => {
+    setAvStatus(prev  => ({ ...prev,  [provider]: "testing" }));
+    setAvLatency(prev => ({ ...prev,  [provider]: null }));
+    setAvError(prev   => ({ ...prev,  [provider]: null }));
+    try {
+      const res  = await fetch(`/api/avatar/test-key?provider=${provider}`);
+      const data = await res.json();
+      setAvStatus(prev  => ({ ...prev, [provider]: data.ok ? "valid" : "invalid" }));
+      setAvLatency(prev => ({ ...prev, [provider]: data.ok ? (data.latencyMs ?? null) : null }));
+      setAvError(prev   => ({ ...prev, [provider]: data.ok ? null : (data.error ?? "Unknown error") }));
+    } catch (e) {
+      setAvStatus(prev => ({ ...prev, [provider]: "invalid" }));
+      setAvError(prev  => ({ ...prev, [provider]: String(e) }));
+    }
+  }, []);
+
+  // Load avatar secrets on mount + auto-test set keys
+  useEffect(() => {
+    fetch("/api/avatar/secrets")
+      .then(r => r.json())
+      .then((d: AvatarSecrets) => {
+        setAvatarSecrets(d);
+        if (d.hedraSet)      testAvatarKey("hedra");
+        if (d.elevenlabsSet) testAvatarKey("elevenlabs");
+        if (d.stabilitySet)  testAvatarKey("stability");
+        if (d.falSet)        testAvatarKey("fal");
+        if (d.livekitSet)    testAvatarKey("livekit");
+      })
+      .catch(() => {});
+  }, [testAvatarKey]);
+
+  // Periodic re-validation for avatar tab
+  useEffect(() => {
+    if (tab !== "avatar" || !avatarSecrets) return;
+    const id = setInterval(() => {
+      if (avatarSecrets.hedraSet)      testAvatarKey("hedra");
+      if (avatarSecrets.elevenlabsSet) testAvatarKey("elevenlabs");
+      if (avatarSecrets.stabilitySet)  testAvatarKey("stability");
+      if (avatarSecrets.falSet)        testAvatarKey("fal");
+      if (avatarSecrets.livekitSet)    testAvatarKey("livekit");
+    }, RETEST_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [tab, avatarSecrets, testAvatarKey, RETEST_INTERVAL_MS]);
+
+  // ── Save avatar secrets ────────────────────────────────────────────────────
+
+  async function saveAvatarSecrets() {
+    setAvatarSaving(true);
+    try {
+      const body: Record<string, string | null> = {};
+      if (newHedraKey.trim())      body.hedraKey      = newHedraKey.trim();
+      if (newHedraSecret.trim())   body.hedraSecret   = newHedraSecret.trim();
+      if (newStabilityKey.trim())  body.stabilityKey  = newStabilityKey.trim();
+      if (newFalKey.trim())        body.falKey        = newFalKey.trim();
+      if (newElevenlabsKey.trim()) body.elevenlabsKey = newElevenlabsKey.trim();
+      if (newLivekitKey.trim())    body.livekitKey    = newLivekitKey.trim();
+      if (newLivekitSecret.trim()) body.livekitSecret = newLivekitSecret.trim();
+      if (newLivekitUrl.trim())    body.livekitUrl    = newLivekitUrl.trim();
+      if (!Object.keys(body).length) { flash(false, "Nothing to save"); setAvatarSaving(false); return; }
+      const res = await fetch("/api/avatar/secrets", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) throw new Error(await res.text());
+      const fresh = await fetch("/api/avatar/secrets").then(r => r.json()) as AvatarSecrets;
+      setAvatarSecrets(fresh);
+      setNewHedraKey(""); setNewHedraSecret(""); setNewStabilityKey(""); setNewFalKey("");
+      setNewElevenlabsKey(""); setNewLivekitKey(""); setNewLivekitSecret(""); setNewLivekitUrl("");
+      if (fresh.hedraSet)      testAvatarKey("hedra");
+      if (fresh.elevenlabsSet) testAvatarKey("elevenlabs");
+      if (fresh.stabilitySet)  testAvatarKey("stability");
+      if (fresh.falSet)        testAvatarKey("fal");
+      if (fresh.livekitSet)    testAvatarKey("livekit");
+      flash(true, "Avatar connections saved — active immediately");
+    } catch (e) { flash(false, "Save failed: " + String(e)); }
+    setAvatarSaving(false);
+  }
 
   const loadDocs = useCallback(async () => {
     setDocsLoading(true);
@@ -406,6 +512,7 @@ export default function BrainAdminPage() {
             ["config",      "Brain Config",   "System prompt & persona"],
             ["knowledge",   "Knowledge Base", `${docs.length} doc${docs.length !== 1 ? "s" : ""} · ${totalChunks} chunks`],
             ["connections", "Connections",    "API keys & model"],
+            ["avatar",      "Avatar Layer",   "Hedra · ElevenLabs · LiveKit"],
             ["test",        "Live Test",      "See the brain in action"],
             ["map",         "Brain Map",      "How it all works"],
           ] as [Tab, string, string][]).map(([id, label, sub]) => (
@@ -1092,6 +1199,147 @@ export default function BrainAdminPage() {
               </p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Tab: Avatar Layer ────────────────────────────────────────────── */}
+      {tab === "avatar" && (
+        <div className="max-w-5xl mx-auto px-8 py-8">
+          <div className="mb-6">
+            <h2 className="text-base font-semibold" style={{ color: "#1E293B" }}>Avatar Layer</h2>
+            <p className="text-sm mt-0.5" style={{ color: "#64748B" }}>
+              Platform credentials for avatar creation and delivery. Keys are stored in the DB and override environment variables.
+            </p>
+          </div>
+
+          <div className="grid gap-5">
+            {([
+              {
+                id: "hedra" as AvatarProvider,
+                label: "Hedra",
+                badge: "Avatar Video",
+                desc: "Generates lip-synced avatar video from a user photo in real-time.",
+                accent: "#f97316",
+                fields: [
+                  { key: "newHedraKey",    set: newHedraKey,    setter: setNewHedraKey,    placeholder: "sk_hedra_…",  label: "API Key",    current: avatarSecrets?.hedraKey,    isSet: avatarSecrets?.hedraSet },
+                  { key: "newHedraSecret", set: newHedraSecret, setter: setNewHedraSecret, placeholder: "Secret…",     label: "API Secret", current: avatarSecrets?.hedraSecret, isSet: avatarSecrets?.hedraSecretSet },
+                ],
+              },
+              {
+                id: "elevenlabs" as AvatarProvider,
+                label: "ElevenLabs",
+                badge: "Voice",
+                desc: "Voice cloning and text-to-speech for the avatar.",
+                accent: "#22d3ee",
+                fields: [
+                  { key: "newElevenlabsKey", set: newElevenlabsKey, setter: setNewElevenlabsKey, placeholder: "sk_…", label: "API Key", current: avatarSecrets?.elevenlabsKey, isSet: avatarSecrets?.elevenlabsSet },
+                ],
+              },
+              {
+                id: "stability" as AvatarProvider,
+                label: "Stability AI",
+                badge: "Stylization",
+                desc: "Turns the user photo into a stylized avatar image.",
+                accent: "#6366f1",
+                fields: [
+                  { key: "newStabilityKey", set: newStabilityKey, setter: setNewStabilityKey, placeholder: "sk-…", label: "API Key", current: avatarSecrets?.stabilityKey, isSet: avatarSecrets?.stabilitySet },
+                ],
+              },
+              {
+                id: "fal" as AvatarProvider,
+                label: "Fal.AI",
+                badge: "AI Generation",
+                desc: "AI image and video generation for avatar customization.",
+                accent: "#a78bfa",
+                fields: [
+                  { key: "newFalKey", set: newFalKey, setter: setNewFalKey, placeholder: "key_id:key_secret", label: "API Key", current: avatarSecrets?.falKey, isSet: avatarSecrets?.falSet },
+                ],
+              },
+              {
+                id: "livekit" as AvatarProvider,
+                label: "LiveKit",
+                badge: "Streaming",
+                desc: "Real-time WebRTC transport for avatar video and audio.",
+                accent: "#34d399",
+                fields: [
+                  { key: "newLivekitKey",    set: newLivekitKey,    setter: setNewLivekitKey,    placeholder: "API…",        label: "API Key",    current: avatarSecrets?.livekitKey,    isSet: !!avatarSecrets?.livekitKey },
+                  { key: "newLivekitSecret", set: newLivekitSecret, setter: setNewLivekitSecret, placeholder: "Secret…",     label: "API Secret", current: avatarSecrets?.livekitSecret, isSet: !!avatarSecrets?.livekitSecret },
+                  { key: "newLivekitUrl",    set: newLivekitUrl,    setter: setNewLivekitUrl,    placeholder: "wss://…",     label: "URL",        current: avatarSecrets?.livekitUrl,    isSet: !!avatarSecrets?.livekitUrl },
+                ],
+              },
+            ]).map((svc) => (
+              <div key={svc.id} className="rounded-2xl overflow-hidden"
+                style={{ border: "1px solid rgba(0,0,0,0.08)", background: "#FFFFFF" }}>
+                {/* Header row */}
+                <div className="flex items-center justify-between px-5 pt-4 pb-3"
+                  style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ background: svc.accent }}/>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold" style={{ color: "#1E293B" }}>{svc.label}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-md"
+                          style={{ background: svc.accent + "18", color: svc.accent, border: `1px solid ${svc.accent}30` }}>
+                          {svc.badge}
+                        </span>
+                      </div>
+                      <p className="text-xs mt-0.5" style={{ color: "#64748B" }}>{svc.desc}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    <KeyStatusPill
+                      status={avStatus[svc.id]}
+                      isSet={svc.id === "livekit" ? !!avatarSecrets?.livekitSet : !!(svc.fields[0]?.isSet)}
+                      latencyMs={avLatency[svc.id]}
+                      error={avError[svc.id]}
+                      onRetest={() => testAvatarKey(svc.id)}
+                    />
+                    {(svc.id === "livekit" ? avatarSecrets?.livekitSet : svc.fields[0]?.isSet) && (
+                      <span className="text-xs" style={{ color: "#334155" }}>re-checks every 5 min</span>
+                    )}
+                  </div>
+                </div>
+                {/* Input fields */}
+                <div className="px-5 py-4 space-y-3">
+                  {svc.fields.map((f) => (
+                    <div key={f.key}>
+                      <p className="text-xs font-medium mb-1.5" style={{ color: "#64748B" }}>{f.label}</p>
+                      {f.isSet && f.current && (
+                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg mb-2"
+                          style={{ background: "rgba(0,0,0,0.02)", border: "1px solid rgba(0,0,0,0.06)" }}>
+                          <span className="text-xs" style={{ color: "#64748B" }}>Current:</span>
+                          <span className="text-xs font-mono" style={{ color: "#9CA3AF" }}>{f.current}</span>
+                        </div>
+                      )}
+                      <input
+                        type={f.label === "URL" ? "text" : "password"}
+                        value={f.set}
+                        onChange={e => f.setter(e.target.value)}
+                        placeholder={f.isSet ? `Paste new ${f.label.toLowerCase()} to replace…` : f.placeholder}
+                        className="w-full px-4 py-2.5 rounded-xl text-sm outline-none font-mono"
+                        style={{ background: "#FFFFFF", border: "1px solid rgba(0,0,0,0.1)", color: "#1E293B" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Save */}
+          <div className="flex justify-end mt-6">
+            <button onClick={saveAvatarSecrets} disabled={avatarSaving}
+              className="text-sm px-6 py-2.5 rounded-xl font-semibold transition-all"
+              style={{
+                background: avatarSaving ? "#F1F5F9" : "linear-gradient(135deg,#f97316,#ea580c)",
+                color: avatarSaving ? "#94A3B8" : "#fff",
+                border: "none",
+                cursor: avatarSaving ? "not-allowed" : "pointer",
+                boxShadow: avatarSaving ? "none" : "0 0 20px rgba(249,115,22,0.25)",
+              }}>
+              {avatarSaving ? "Saving…" : "Save Avatar Connections"}
+            </button>
+          </div>
         </div>
       )}
 

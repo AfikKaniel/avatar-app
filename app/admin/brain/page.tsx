@@ -1475,8 +1475,8 @@ function NeuralNetViz({
   ];
 
   const creationNodes = [
-    { id: "fal",        label: "Fal.AI",       sub: "Body avatar · flux-pulid", color: "#e879f9", icon: "✦" },
     { id: "stability",  label: "Stability AI", sub: "Face portrait · app UI",    color: "#fb923c", icon: "◈" },
+    { id: "fal",        label: "Fal.AI",       sub: "Body avatar · flux-pulid", color: "#e879f9", icon: "✦" },
     { id: "elevenlabs", label: "ElevenLabs",   sub: "Voice clone · TTS",        color: "#22d3ee", icon: "♪" },
   ];
 
@@ -1506,7 +1506,7 @@ function NeuralNetViz({
 
   // Stability AI → Output directly (arches above the pipeline, bypasses Hedra/LiveKit)
   // photo_url is stored for the app UI / avatar display — Hedra only uses what the agent crops from Fal.AI
-  const connStabilityToOut = `M ${CRX - CRR},${CRY[1]} C ${HX},75 ${LKX},75 ${RX + RR},${RY}`;
+  const connStabilityToOut = `M ${CRX - CRR},${CRY[0]} C ${HX},75 ${LKX},75 ${RX + RR},${RY}`;
 
   // Hedra → LiveKit (same Y, bow upward)
   const connHedraToLK = `M ${HX - HR},${HY} C ${(HX-HR+LKX+LKR)/2},${HY-28} ${(HX-HR+LKX+LKR)/2},${LKY-28} ${LKX + LKR},${LKY}`;
@@ -1589,14 +1589,14 @@ function NeuralNetViz({
         <path d={connClaudeOut} fill="none" stroke="#c4b5fd" strokeWidth="1.5" strokeOpacity="0.18"/>
 
         {/* Fal.AI + ElevenLabs → Hedra */}
-        {[0, 2].map(i => (
+        {[1, 2].map(i => (
           <path key={`cr-trail-${i}`} d={connCreation(i)} fill="none"
             stroke={creationNodes[i].color} strokeWidth="1.4" strokeOpacity="0.14"/>
         ))}
 
         {/* Stability AI → Output directly (arches above the pipeline) */}
         <path d={connStabilityToOut} fill="none"
-          stroke={creationNodes[1].color} strokeWidth="1.4" strokeOpacity="0.14" strokeDasharray="5 8"/>
+          stroke={creationNodes[0].color} strokeWidth="1.4" strokeOpacity="0.14" strokeDasharray="5 8"/>
 
         {/* Hedra → LiveKit */}
         <path d={connHedraToLK} fill="none" stroke="#f97316" strokeWidth="1.4" strokeOpacity="0.16"/>
@@ -1640,7 +1640,7 @@ function NeuralNetViz({
         </path>
 
         {/* Fal.AI + ElevenLabs → Hedra (right-to-left) */}
-        {[0, 2].map(i => (
+        {[1, 2].map(i => (
           <path key={`cr-stream-${i}`} d={connCreation(i)} fill="none"
             stroke={creationNodes[i].color} strokeWidth="2.6" strokeLinecap="round"
             strokeDasharray="10 32" strokeOpacity="0.88"
@@ -1653,7 +1653,7 @@ function NeuralNetViz({
 
         {/* Stability AI → Output (arched above pipeline, dashed = display path) */}
         <path d={connStabilityToOut} fill="none"
-          stroke={creationNodes[1].color} strokeWidth="2.2" strokeLinecap="round"
+          stroke={creationNodes[0].color} strokeWidth="2.2" strokeLinecap="round"
           strokeDasharray="6 20" strokeOpacity="0.72"
           filter="url(#nnv-glow-sm)">
           {/* @ts-ignore */}

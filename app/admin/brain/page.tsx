@@ -7,6 +7,7 @@ const ADMIN_USER_ID = "gaging-global";
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Tab = "config" | "knowledge" | "connections" | "test" | "map";
+type KeyStatus = "idle" | "testing" | "valid" | "invalid";
 
 interface BrainConfig {
   personaPrompt: string;
@@ -128,6 +129,14 @@ export default function BrainAdminPage() {
   const [ragThreshold, setRagThreshold]   = useState(0.25);
   const [secretsSaving, setSecretsSaving] = useState(false);
 
+  // Live key validation
+  const [openaiStatus,    setOpenaiStatus]    = useState<KeyStatus>("idle");
+  const [anthropicStatus, setAnthropicStatus] = useState<KeyStatus>("idle");
+  const [openaiLatency,   setOpenaiLatency]   = useState<number | null>(null);
+  const [anthropicLatency,setAnthropicLatency]= useState<number | null>(null);
+  const [openaiError,     setOpenaiError]     = useState<string | null>(null);
+  const [anthropicError,  setAnthropicError]  = useState<string | null>(null);
+
   // Paste text state
   const [pasteOpen, setPasteOpen]     = useState(false);
   const [pasteName, setPasteName]     = useState("");
@@ -143,6 +152,27 @@ export default function BrainAdminPage() {
 
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // ── Key validation ─────────────────────────────────────────────────────────
+
+  const testKey = useCallback(async (provider: "openai" | "anthropic") => {
+    const setStatus  = provider === "openai" ? setOpenaiStatus    : setAnthropicStatus;
+    const setLatency = provider === "openai" ? setOpenaiLatency   : setAnthropicLatency;
+    const setError   = provider === "openai" ? setOpenaiError     : setAnthropicError;
+    setStatus("testing");
+    setLatency(null);
+    setError(null);
+    try {
+      const res  = await fetch(`/api/brain/test-key?provider=${provider}`);
+      const data = await res.json();
+      setStatus(data.ok ? "valid" : "invalid");
+      if (data.ok)    setLatency(data.latencyMs ?? null);
+      else            setError(data.error ?? "Unknown error");
+    } catch (e) {
+      setStatus("invalid");
+      setError(String(e));
+    }
+  }, []);
+
   // ── Load ──────────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -157,9 +187,11 @@ export default function BrainAdminPage() {
         setSecrets(d);
         setSelectedModel(d.primaryModel);
         setRagThreshold(d.ragThreshold);
+        if (d.openaiSet)    testKey("openai");
+        if (d.anthropicSet) testKey("anthropic");
       })
       .catch(() => {});
-  }, []);
+  }, [testKey]);
 
   const loadDocs = useCallback(async () => {
     setDocsLoading(true);
@@ -274,11 +306,13 @@ export default function BrainAdminPage() {
       });
       if (!res.ok) throw new Error(await res.text());
 
-      // Refresh displayed secrets
+      // Refresh displayed secrets then re-validate
       const fresh = await fetch("/api/brain/secrets").then(r => r.json()) as Secrets;
       setSecrets(fresh);
       setNewOpenAI("");
       setNewAnthropic("");
+      if (fresh.openaiSet)    testKey("openai");
+      if (fresh.anthropicSet) testKey("anthropic");
       flash(true, "Connections saved — active immediately");
     } catch (e) {
       flash(false, "Save failed: " + String(e));
@@ -687,17 +721,13 @@ export default function BrainAdminPage() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full flex-shrink-0"
-                  style={{
-                    background: secrets?.openaiSet ? "rgba(52,211,153,0.1)" : "rgba(248,113,113,0.08)",
-                    border: `1px solid ${secrets?.openaiSet ? "rgba(52,211,153,0.25)" : "rgba(248,113,113,0.2)"}`,
-                  }}>
-                  <div className="w-1.5 h-1.5 rounded-full"
-                    style={{ background: secrets?.openaiSet ? "#34d399" : "#f87171", boxShadow: secrets?.openaiSet ? "0 0 5px #34d399" : "none" }}/>
-                  <span className="text-xs" style={{ color: secrets?.openaiSet ? "#34d399" : "#f87171" }}>
-                    {secrets?.openaiSet ? "Connected" : "Not set"}
-                  </span>
-                </div>
+                <KeyStatusPill
+                  status={secrets?.openaiSet ? openaiStatus : "idle"}
+                  isSet={!!secrets?.openaiSet}
+                  latencyMs={openaiLatency}
+                  error={openaiError}
+                  onRetest={() => testKey("openai")}
+                />
               </div>
               <div className="px-5 py-4 space-y-3">
                 {secrets?.openaiKey && (
@@ -742,17 +772,13 @@ export default function BrainAdminPage() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full flex-shrink-0"
-                  style={{
-                    background: secrets?.anthropicSet ? "rgba(52,211,153,0.1)" : "rgba(248,113,113,0.08)",
-                    border: `1px solid ${secrets?.anthropicSet ? "rgba(52,211,153,0.25)" : "rgba(248,113,113,0.2)"}`,
-                  }}>
-                  <div className="w-1.5 h-1.5 rounded-full"
-                    style={{ background: secrets?.anthropicSet ? "#34d399" : "#f87171", boxShadow: secrets?.anthropicSet ? "0 0 5px #34d399" : "none" }}/>
-                  <span className="text-xs" style={{ color: secrets?.anthropicSet ? "#34d399" : "#f87171" }}>
-                    {secrets?.anthropicSet ? "Connected" : "Not set"}
-                  </span>
-                </div>
+                <KeyStatusPill
+                  status={secrets?.anthropicSet ? anthropicStatus : "idle"}
+                  isSet={!!secrets?.anthropicSet}
+                  latencyMs={anthropicLatency}
+                  error={anthropicError}
+                  onRetest={() => testKey("anthropic")}
+                />
               </div>
               <div className="px-5 py-4 space-y-3">
                 {secrets?.anthropicKey && (
@@ -1083,6 +1109,43 @@ function StatusPill({ color, label, active }: { color: string; label: string; ac
       <div className="w-1.5 h-1.5 rounded-full" style={{ background: active ? color : "#CBD5E1", boxShadow: active ? `0 0 5px ${color}` : "none" }}/>
       <span className="text-xs" style={{ color: active ? color : "#94A3B8" }}>{label}</span>
     </div>
+  );
+}
+
+function KeyStatusPill({ status, isSet, latencyMs, error, onRetest }: {
+  status: KeyStatus;
+  isSet: boolean;
+  latencyMs: number | null;
+  error: string | null;
+  onRetest: () => void;
+}) {
+  if (!isSet) return (
+    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full flex-shrink-0"
+      style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
+      <div className="w-1.5 h-1.5 rounded-full" style={{ background: "#f87171" }}/>
+      <span className="text-xs" style={{ color: "#f87171" }}>Not set</span>
+    </div>
+  );
+
+  const cfg: Record<KeyStatus, { color: string; bg: string; border: string; label: string }> = {
+    idle:    { color: "#64748B", bg: "rgba(100,116,139,0.08)", border: "rgba(100,116,139,0.2)",  label: "Checking…"  },
+    testing: { color: "#f59e0b", bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.2)",   label: "Testing…"   },
+    valid:   { color: "#34d399", bg: "rgba(52,211,153,0.1)",   border: "rgba(52,211,153,0.25)",  label: latencyMs ? `${latencyMs}ms` : "Connected" },
+    invalid: { color: "#f87171", bg: "rgba(248,113,113,0.08)", border: "rgba(248,113,113,0.2)",  label: "Invalid key" },
+  };
+  const { color, bg, border, label } = cfg[status];
+
+  return (
+    <button onClick={onRetest} title={status === "invalid" ? (error ?? "Click to retry") : "Click to retest"}
+      className="flex items-center gap-1.5 px-3 py-1 rounded-full flex-shrink-0 transition-opacity hover:opacity-75"
+      style={{ background: bg, border: `1px solid ${border}`, cursor: "pointer" }}>
+      {status === "testing"
+        ? <Spinner color={color} />
+        : <div className="w-1.5 h-1.5 rounded-full"
+            style={{ background: color, boxShadow: status === "valid" ? `0 0 5px ${color}` : "none" }}/>
+      }
+      <span className="text-xs" style={{ color }}>{label}</span>
+    </button>
   );
 }
 

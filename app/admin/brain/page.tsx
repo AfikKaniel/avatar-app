@@ -1152,7 +1152,11 @@ function NeuralNetViz({
   // Bezier: avatar node left-edge → output node right-edge (right → left flow)
   const connPathRight = (srcY: number) => {
     const fx = AVX - AVR, tx = RX + RR, cpx = (fx + tx) / 2;
-    return `M ${fx},${srcY} C ${cpx},${srcY} ${cpx},${RY} ${tx},${RY}`;
+    // When srcY === RY the bezier collapses to a straight line — bow it upward instead
+    const sameY = Math.abs(srcY - RY) < 6;
+    const cp1y = sameY ? srcY - 32 : srcY;
+    const cp2y = sameY ? RY  - 32 : RY;
+    return `M ${fx},${srcY} C ${cpx},${cp1y} ${cpx},${cp2y} ${tx},${RY}`;
   };
 
   const kbGateX = 248, kbGateY = 145;

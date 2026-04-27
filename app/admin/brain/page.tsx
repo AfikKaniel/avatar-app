@@ -193,6 +193,22 @@ export default function BrainAdminPage() {
       .catch(() => {});
   }, [testKey]);
 
+  // ── Periodic re-validation (only while Connections tab is open) ───────────
+
+  const RETEST_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+  useEffect(() => {
+    if (tab !== "connections") return;
+    if (!secrets?.openaiSet && !secrets?.anthropicSet) return;
+
+    const id = setInterval(() => {
+      if (secrets.openaiSet)    testKey("openai");
+      if (secrets.anthropicSet) testKey("anthropic");
+    }, RETEST_INTERVAL_MS);
+
+    return () => clearInterval(id);
+  }, [tab, secrets, testKey, RETEST_INTERVAL_MS]);
+
   const loadDocs = useCallback(async () => {
     setDocsLoading(true);
     try {
@@ -721,13 +737,18 @@ export default function BrainAdminPage() {
                     </p>
                   </div>
                 </div>
-                <KeyStatusPill
-                  status={secrets?.openaiSet ? openaiStatus : "idle"}
-                  isSet={!!secrets?.openaiSet}
-                  latencyMs={openaiLatency}
-                  error={openaiError}
-                  onRetest={() => testKey("openai")}
-                />
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <KeyStatusPill
+                    status={secrets?.openaiSet ? openaiStatus : "idle"}
+                    isSet={!!secrets?.openaiSet}
+                    latencyMs={openaiLatency}
+                    error={openaiError}
+                    onRetest={() => testKey("openai")}
+                  />
+                  {secrets?.openaiSet && (
+                    <span className="text-xs" style={{ color: "#334155" }}>re-checks every 5 min</span>
+                  )}
+                </div>
               </div>
               <div className="px-5 py-4 space-y-3">
                 {secrets?.openaiKey && (
@@ -772,13 +793,18 @@ export default function BrainAdminPage() {
                     </p>
                   </div>
                 </div>
-                <KeyStatusPill
-                  status={secrets?.anthropicSet ? anthropicStatus : "idle"}
-                  isSet={!!secrets?.anthropicSet}
-                  latencyMs={anthropicLatency}
-                  error={anthropicError}
-                  onRetest={() => testKey("anthropic")}
-                />
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <KeyStatusPill
+                    status={secrets?.anthropicSet ? anthropicStatus : "idle"}
+                    isSet={!!secrets?.anthropicSet}
+                    latencyMs={anthropicLatency}
+                    error={anthropicError}
+                    onRetest={() => testKey("anthropic")}
+                  />
+                  {secrets?.anthropicSet && (
+                    <span className="text-xs" style={{ color: "#334155" }}>re-checks every 5 min</span>
+                  )}
+                </div>
               </div>
               <div className="px-5 py-4 space-y-3">
                 {secrets?.anthropicKey && (

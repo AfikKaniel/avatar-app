@@ -1,0 +1,1432 @@
+"use client";
+
+import { useEffect, useRef, useState, useTransition, useCallback } from "react";
+
+const ADMIN_USER_ID = "gaging-global";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type Tab = "config" | "knowledge" | "connections" | "test" | "map";
+
+interface BrainConfig {
+  personaPrompt: string;
+  knowledgeRules: string;
+  responseStyle: string;
+  safetyRules: string;
+}
+
+interface MedicalDoc {
+  id: number;
+  filename: string;
+  chunkCount: number;
+  fileSize?: number;
+  createdAt: string;
+}
+
+interface UploadItem {
+  id: string;
+  filename: string;
+  status: "uploading" | "processing" | "done" | "error";
+  error?: string;
+}
+
+interface Chunk {
+  content: string;
+  similarity: number;
+}
+
+interface TestResult {
+  chunks: Chunk[];
+  response: string;
+  systemPrompt: string;
+}
+
+interface Secrets {
+  openaiKey: string | null;
+  anthropicKey: string | null;
+  primaryModel: string;
+  ragThreshold: number;
+  openaiSet: boolean;
+  anthropicSet: boolean;
+}
+
+// ── Field definitions ─────────────────────────────────────────────────────────
+
+const FIELDS: {
+  key: keyof BrainConfig;
+  label: string;
+  badge: string;
+  description: string;
+  accent: string;
+  placeholder: string;
+}[] = [
+  {
+    key: "personaPrompt",
+    label: "Persona",
+    badge: "Identity",
+    description: "Who GAGING is, how it speaks, and how it relates to the user. This is the core character — every response flows from this.",
+    accent: "#a78bfa",
+    placeholder: "You are GAGING — the user's personal AI health companion…",
+  },
+  {
+    key: "knowledgeRules",
+    label: "Knowledge Rules",
+    badge: "Reasoning",
+    description: "What GAGING prioritises and trusts. Governs how it uses HealthKit data, uploaded documents, and conversation memory.",
+    accent: "#34d399",
+    placeholder: "Ground every response in the user's actual HealthKit data…",
+  },
+  {
+    key: "responseStyle",
+    label: "Response Style",
+    badge: "Format",
+    description: "Tone, length, and format. Applies to both voice sessions (2–4 sentences) and text chat.",
+    accent: "#38bdf8",
+    placeholder: "Keep voice responses 2–4 sentences. Conversational, warm, and specific…",
+  },
+  {
+    key: "safetyRules",
+    label: "Safety Guidelines",
+    badge: "Medical",
+    description: "Medical disclaimers and emergency escalation rules. These protect users — do not remove.",
+    accent: "#f87171",
+    placeholder: "Always recommend consulting a doctor for medical decisions…",
+  },
+];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function fmtSize(bytes?: number) {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1_048_576) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1_048_576).toFixed(1)} MB`;
+}
+
+function fmtDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
+export default function BrainAdminPage() {
+  const [tab, setTab]             = useState<Tab>("config");
+  const [config, setConfig]       = useState<BrainConfig | null>(null);
+  const [savedConfig, setSaved]   = useState<BrainConfig | null>(null);
+  const [docs, setDocs]           = useState<MedicalDoc[]>([]);
+  const [uploads, setUploads]     = useState<UploadItem[]>([]);
+  const [dragOver, setDragOver]   = useState(false);
+  const [toast, setToast]         = useState<{ ok: boolean; msg: string } | null>(null);
+  const [isPending, start]        = useTransition();
+  const [docsLoading, setDocsLoading] = useState(true);
+
+  // Connections state
+  const [secrets, setSecrets]           = useState<Secrets | null>(null);
+  const [newOpenAI, setNewOpenAI]       = useState("");
+  const [newAnthropic, setNewAnthropic] = useState("");
+  const [selectedModel, setSelectedModel] = useState("claude-haiku-4-5-20251001");
+  const [ragThreshold, setRagThreshold]   = useState(0.25);
+  const [secretsSaving, setSecretsSaving] = useState(false);
+
+  // Paste text state
+  const [pasteOpen, setPasteOpen]     = useState(false);
+  const [pasteName, setPasteName]     = useState("");
+  const [pasteText, setPasteText]     = useState("");
+  const [pasteLoading, setPasteLoading] = useState(false);
+
+  // Live Test state
+  const [testQuery, setTestQuery]       = useState("");
+  const [testLoading, setTestLoading]   = useState(false);
+  const [testResult, setTestResult]     = useState<TestResult | null>(null);
+  const [testError, setTestError]       = useState<string | null>(null);
+  const [showPrompt, setShowPrompt]     = useState(false);
+
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // ── Load ──────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    fetch("/api/brain/config")
+      .then(r => r.json())
+      .then((d: BrainConfig) => { setConfig(d); setSaved(d); })
+      .catch(() => {});
+
+    fetch("/api/brain/secrets")
+      .then(r => r.json())
+      .then((d: Secrets) => {
+        setSecrets(d);
+        setSelectedModel(d.primaryModel);
+        setRagThreshold(d.ragThreshold);
+      })
+      .catch(() => {});
+  }, []);
+
+  const loadDocs = useCallback(async () => {
+    setDocsLoading(true);
+    try {
+      const r = await fetch(`/api/docs/list?userId=${ADMIN_USER_ID}`);
+      const d = await r.json();
+      setDocs(d.docs ?? []);
+    } catch {}
+    setDocsLoading(false);
+  }, []);
+
+  useEffect(() => { loadDocs(); }, [loadDocs]);
+
+  // ── Save config ────────────────────────────────────────────────────────────
+
+  function saveConfig() {
+    if (!config) return;
+    start(async () => {
+      try {
+        const res = await fetch("/api/brain/config", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(config),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        setSaved(config);
+        flash(true, "Brain config saved — active on next session");
+      } catch (e) {
+        flash(false, "Save failed: " + String(e));
+      }
+    });
+  }
+
+  // ── Upload ─────────────────────────────────────────────────────────────────
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    for (const file of Array.from(files)) {
+      const allowed = [".pdf", ".txt", ".md", ".docx"].some(ext => file.name.toLowerCase().endsWith(ext));
+      if (!allowed) { flash(false, `${file.name} — only PDF, DOCX, TXT, and MD files are supported`); continue; }
+
+      const uid = crypto.randomUUID();
+      setUploads(prev => [...prev, { id: uid, filename: file.name, status: "uploading" }]);
+
+      try {
+        const form = new FormData();
+        form.append("file", file);
+        form.append("userId", ADMIN_USER_ID);
+        setUploads(prev => prev.map(u => u.id === uid ? { ...u, status: "processing" } : u));
+        const res = await fetch("/api/docs/upload", { method: "POST", body: form });
+        if (!res.ok) throw new Error(await res.text());
+        setUploads(prev => prev.map(u => u.id === uid ? { ...u, status: "done" } : u));
+        setTimeout(() => setUploads(prev => prev.filter(u => u.id !== uid)), 3000);
+        await loadDocs();
+      } catch (e) {
+        setUploads(prev => prev.map(u => u.id === uid ? { ...u, status: "error", error: String(e) } : u));
+        setTimeout(() => setUploads(prev => prev.filter(u => u.id !== uid)), 5000);
+      }
+    }
+  }
+
+  // ── Delete doc ─────────────────────────────────────────────────────────────
+
+  async function deleteDoc(id: number, name: string) {
+    if (!confirm(`Remove "${name}" from the knowledge base?`)) return;
+    try {
+      await fetch(`/api/docs/delete?docId=${id}&userId=${ADMIN_USER_ID}`, { method: "DELETE" });
+      setDocs(prev => prev.filter(d => d.id !== id));
+      flash(true, `"${name}" removed`);
+    } catch {
+      flash(false, "Delete failed");
+    }
+  }
+
+  // ── Paste text ────────────────────────────────────────────────────────────
+
+  async function submitPaste() {
+    if (!pasteName.trim() || !pasteText.trim()) return;
+    setPasteLoading(true);
+    try {
+      const res = await fetch("/api/docs/paste", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: pasteName.trim(), text: pasteText.trim(), userId: ADMIN_USER_ID }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      flash(true, `"${pasteName}" added to knowledge base`);
+      setPasteName(""); setPasteText(""); setPasteOpen(false);
+      await loadDocs();
+    } catch (e) {
+      flash(false, "Failed to save: " + String(e));
+    }
+    setPasteLoading(false);
+  }
+
+  // ── Save secrets ──────────────────────────────────────────────────────────
+
+  async function saveSecrets() {
+    setSecretsSaving(true);
+    try {
+      const body: Record<string, string | number | null> = {
+        primaryModel: selectedModel,
+        ragThreshold,
+      };
+      if (newOpenAI.trim())    body.openaiKey    = newOpenAI.trim();
+      if (newAnthropic.trim()) body.anthropicKey = newAnthropic.trim();
+
+      const res = await fetch("/api/brain/secrets", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(await res.text());
+
+      // Refresh displayed secrets
+      const fresh = await fetch("/api/brain/secrets").then(r => r.json()) as Secrets;
+      setSecrets(fresh);
+      setNewOpenAI("");
+      setNewAnthropic("");
+      flash(true, "Connections saved — active immediately");
+    } catch (e) {
+      flash(false, "Save failed: " + String(e));
+    }
+    setSecretsSaving(false);
+  }
+
+  // ── Live Test ──────────────────────────────────────────────────────────────
+
+  async function runTest() {
+    if (!testQuery.trim()) return;
+    setTestLoading(true);
+    setTestResult(null);
+    setTestError(null);
+    setShowPrompt(false);
+    try {
+      const res = await fetch("/api/brain/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: testQuery }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data: TestResult = await res.json();
+      setTestResult(data);
+    } catch (e) {
+      setTestError(String(e));
+    }
+    setTestLoading(false);
+  }
+
+  // ── Utils ──────────────────────────────────────────────────────────────────
+
+  function flash(ok: boolean, msg: string) {
+    setToast({ ok, msg });
+    setTimeout(() => setToast(null), 4000);
+  }
+
+  function onDrop(e: React.DragEvent) {
+    e.preventDefault();
+    setDragOver(false);
+    handleFiles(e.dataTransfer.files);
+  }
+
+  const isDirty = config && savedConfig && JSON.stringify(config) !== JSON.stringify(savedConfig);
+  const totalChunks = docs.reduce((s, d) => s + d.chunkCount, 0);
+
+  // ── Render ─────────────────────────────────────────────────────────────────
+
+  return (
+    <div className="min-h-screen" style={{ background: "#F8FAFC", color: "#1E293B" }}>
+
+      {/* ── Header ──────────────────────────────────────────────────────────── */}
+      <header style={{ borderBottom: "1px solid rgba(0,0,0,0.08)", background: "#FFFFFF", boxShadow: "0 1px 3px rgba(0,0,0,0.06)" }}>
+        <div className="max-w-5xl mx-auto px-8 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl flex items-center justify-center"
+              style={{ background: "linear-gradient(135deg,#8B5CF6,#7C3AED)", border: "1px solid rgba(139,92,246,0.3)" }}>
+              <span style={{ fontSize: 14 }}>◈</span>
+            </div>
+            <div>
+              <p className="text-sm font-bold tracking-tight" style={{ color: "#1E293B" }}>GAGING Brain</p>
+              <p className="text-xs" style={{ color: "#64748B" }}>Knowledge & Behaviour Manager</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-4">
+            <StatusPill color="#a78bfa" label="Config" active={!!(savedConfig?.personaPrompt)} />
+            <StatusPill color="#34d399" label={`${docs.length} doc${docs.length !== 1 ? "s" : ""}`} active={docs.length > 0} />
+            <StatusPill color="#38bdf8" label={`${totalChunks} chunks`} active={totalChunks > 0} />
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="max-w-5xl mx-auto px-8 flex gap-1">
+          {([
+            ["config",      "Brain Config",   "System prompt & persona"],
+            ["knowledge",   "Knowledge Base", `${docs.length} doc${docs.length !== 1 ? "s" : ""} · ${totalChunks} chunks`],
+            ["connections", "Connections",    "API keys & model"],
+            ["test",        "Live Test",      "See the brain in action"],
+            ["map",         "Brain Map",      "How it all works"],
+          ] as [Tab, string, string][]).map(([id, label, sub]) => (
+            <button key={id} onClick={() => setTab(id)}
+              className="px-4 py-3 text-sm relative transition-colors"
+              style={{ color: tab === id ? "#1E293B" : "#94A3B8", background: "none", border: "none", cursor: "pointer" }}>
+              <span className="font-medium">{label}</span>
+              <span className="ml-2 text-xs" style={{ color: tab === id ? "#64748B" : "#CBD5E1" }}>{sub}</span>
+              {tab === id && (
+                <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-full"
+                  style={{ background: "linear-gradient(90deg,#a78bfa,#38bdf8)" }}/>
+              )}
+            </button>
+          ))}
+        </div>
+      </header>
+
+      {/* ── Tab: Brain Config ──────────────────────────────────────────────── */}
+      {tab === "config" && config && (
+        <div className="max-w-5xl mx-auto px-8 py-8">
+          <div className="flex items-start justify-between mb-6">
+            <div>
+              <h2 className="text-base font-semibold" style={{ color: "#1E293B" }}>Brain Behaviour</h2>
+              <p className="text-sm mt-0.5" style={{ color: "#64748B" }}>
+                These 4 sections form the foundation of every Claude session. Changes go live immediately — no app update required.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {isDirty && (
+                <button onClick={() => setConfig(savedConfig!)}
+                  className="text-sm px-4 py-2 rounded-xl"
+                  style={{ background: "#FFFFFF", border: "1px solid rgba(0,0,0,0.08)", color: "#64748B", cursor: "pointer" }}>
+                  Revert
+                </button>
+              )}
+              <button onClick={saveConfig} disabled={isPending || !isDirty}
+                className="text-sm px-5 py-2 rounded-xl font-semibold transition-all"
+                style={{
+                  background: isDirty && !isPending ? "linear-gradient(135deg,#8B5CF6,#7C3AED)" : "#F1F5F9",
+                  color: isDirty && !isPending ? "#fff" : "#94A3B8",
+                  border: "none", cursor: isDirty && !isPending ? "pointer" : "not-allowed",
+                  boxShadow: isDirty && !isPending ? "0 0 20px rgba(139,92,246,0.3)" : "none",
+                }}>
+                {isPending ? "Saving…" : "Save all changes"}
+              </button>
+            </div>
+          </div>
+
+          <div className="grid gap-5">
+            {FIELDS.map((f) => (
+              <div key={f.key} className="rounded-2xl overflow-hidden"
+                style={{
+                  border: `1px solid ${config[f.key] !== (savedConfig?.[f.key] ?? "") ? f.accent + "40" : "rgba(0,0,0,0.08)"}`,
+                  background: "#FFFFFF",
+                  transition: "border-color 0.2s",
+                }}>
+                <div className="flex items-start justify-between px-5 pt-4 pb-3"
+                  style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+                  <div className="flex items-center gap-3">
+                    <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ background: f.accent }}/>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold" style={{ color: "#1E293B" }}>{f.label}</span>
+                        <span className="text-xs px-2 py-0.5 rounded-md"
+                          style={{ background: f.accent + "18", color: f.accent, border: `1px solid ${f.accent}30` }}>
+                          {f.badge}
+                        </span>
+                        {config[f.key] !== (savedConfig?.[f.key] ?? "") && (
+                          <span className="text-xs" style={{ color: f.accent }}>● unsaved</span>
+                        )}
+                      </div>
+                      <p className="text-xs mt-0.5" style={{ color: "#64748B" }}>{f.description}</p>
+                    </div>
+                  </div>
+                  <span className="text-xs flex-shrink-0 pt-1" style={{ color: "#94A3B8" }}>
+                    {config[f.key].length} chars
+                  </span>
+                </div>
+                <textarea
+                  value={config[f.key]}
+                  onChange={e => setConfig(prev => prev ? { ...prev, [f.key]: e.target.value } : prev)}
+                  rows={5}
+                  placeholder={f.placeholder}
+                  className="w-full px-5 py-4 text-sm leading-relaxed resize-y outline-none"
+                  style={{
+                    background: "transparent",
+                    color: "#1E293B",
+                    fontFamily: "'SF Mono', ui-monospace, monospace",
+                    fontSize: 13,
+                    lineHeight: 1.75,
+                    caretColor: f.accent,
+                  }}
+                  spellCheck={false}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab: Knowledge Base ────────────────────────────────────────────── */}
+      {tab === "knowledge" && (
+        <div className="max-w-5xl mx-auto px-8 py-8">
+          <div className="mb-6">
+            <h2 className="text-base font-semibold" style={{ color: "#1E293B" }}>Knowledge Base</h2>
+            <p className="text-sm mt-0.5" style={{ color: "#64748B" }}>
+              Upload medical reports, research papers, protocols, or any reference document.
+              GAGING retrieves the most relevant sections during every user session via semantic search.
+            </p>
+          </div>
+
+          {/* Upload zone */}
+          <div
+            onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={onDrop}
+            onClick={() => fileRef.current?.click()}
+            className="rounded-2xl flex flex-col items-center justify-center cursor-pointer mb-6"
+            style={{
+              border: `2px dashed ${dragOver ? "#8B5CF6" : "rgba(0,0,0,0.12)"}`,
+              background: dragOver ? "rgba(139,92,246,0.06)" : "rgba(0,0,0,0.01)",
+              padding: "48px 24px",
+              transition: "all 0.2s",
+              boxShadow: dragOver ? "0 0 30px rgba(139,92,246,0.15)" : "none",
+            }}>
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4"
+              style={{ background: "rgba(167,139,250,0.12)", border: "1px solid rgba(167,139,250,0.25)" }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                <path d="M12 4L8 8h3v8h2V8h3L12 4z" fill="#a78bfa"/>
+                <path d="M5 18h14v2H5z" fill="#a78bfa" opacity="0.5"/>
+              </svg>
+            </div>
+            <p className="text-sm font-semibold" style={{ color: "#475569" }}>
+              {dragOver ? "Drop to upload" : "Drop files here or click to browse"}
+            </p>
+            <p className="text-xs mt-1" style={{ color: "#64748B" }}>PDF, DOCX, TXT, or Markdown — up to 50MB</p>
+            <input ref={fileRef} type="file" accept=".pdf,.docx,.txt,.md" multiple className="hidden"
+              onChange={e => { handleFiles(e.target.files); e.target.value = ""; }}/>
+          </div>
+
+          {/* Paste text toggle */}
+          <div className="mb-6">
+            <button
+              onClick={() => setPasteOpen(p => !p)}
+              className="flex items-center gap-2 text-sm px-4 py-2 rounded-xl transition-all"
+              style={{
+                background: pasteOpen ? "rgba(139,92,246,0.08)" : "#FFFFFF",
+                border: `1px solid ${pasteOpen ? "rgba(139,92,246,0.3)" : "rgba(0,0,0,0.08)"}`,
+                color: pasteOpen ? "#8B5CF6" : "#64748B",
+                cursor: "pointer",
+              }}>
+              <span>{pasteOpen ? "▲" : "▼"}</span>
+              <span>Or paste text directly</span>
+              <span className="text-xs ml-1" style={{ color: "#64748B" }}>— works for any format</span>
+            </button>
+
+            {pasteOpen && (
+              <div className="mt-3 rounded-2xl overflow-hidden"
+                style={{ border: "1px solid rgba(139,92,246,0.2)", background: "rgba(139,92,246,0.03)" }}>
+                <div className="px-5 pt-4 pb-3 flex flex-col gap-3">
+                  <input
+                    type="text"
+                    value={pasteName}
+                    onChange={e => setPasteName(e.target.value)}
+                    placeholder="Document name (e.g. CTO Prep Notes)"
+                    className="w-full px-4 py-2.5 rounded-xl text-sm outline-none"
+                    style={{
+                      background: "#FFFFFF",
+                      border: "1px solid rgba(0,0,0,0.1)",
+                      color: "#1E293B",
+                    }}
+                  />
+                  <textarea
+                    value={pasteText}
+                    onChange={e => setPasteText(e.target.value)}
+                    placeholder="Paste your document content here…"
+                    rows={10}
+                    className="w-full px-4 py-3 rounded-xl text-sm outline-none resize-y leading-relaxed"
+                    style={{
+                      background: "rgba(0,0,0,0.03)",
+                      border: "1px solid rgba(0,0,0,0.08)",
+                      color: "#1E293B",
+                      fontFamily: "'SF Mono', ui-monospace, monospace",
+                      fontSize: 12,
+                    }}
+                  />
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs" style={{ color: "#64748B" }}>
+                      {pasteText.length > 0 ? `${pasteText.trim().split(/\s+/).length} words` : ""}
+                    </span>
+                    <div className="flex gap-2">
+                      <button onClick={() => { setPasteOpen(false); setPasteName(""); setPasteText(""); }}
+                        className="text-sm px-4 py-2 rounded-xl"
+                        style={{ background: "rgba(0,0,0,0.03)", border: "1px solid rgba(0,0,0,0.08)", color: "#64748B", cursor: "pointer" }}>
+                        Cancel
+                      </button>
+                      <button
+                        onClick={submitPaste}
+                        disabled={pasteLoading || !pasteName.trim() || !pasteText.trim()}
+                        className="text-sm px-5 py-2 rounded-xl font-semibold"
+                        style={{
+                          background: (!pasteLoading && pasteName.trim() && pasteText.trim())
+                            ? "linear-gradient(135deg,#8B5CF6,#7C3AED)"
+                            : "#F1F5F9",
+                          color: (!pasteLoading && pasteName.trim() && pasteText.trim()) ? "#fff" : "#444",
+                          border: "none",
+                          cursor: (!pasteLoading && pasteName.trim() && pasteText.trim()) ? "pointer" : "not-allowed",
+                        }}>
+                        {pasteLoading ? "Embedding…" : "Add to Knowledge Base"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Active uploads */}
+          {uploads.length > 0 && (
+            <div className="space-y-2 mb-6">
+              {uploads.map(u => (
+                <div key={u.id} className="flex items-center gap-3 px-4 py-3 rounded-xl"
+                  style={{ background: "rgba(0,0,0,0.03)", border: "1px solid rgba(0,0,0,0.08)" }}>
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                    style={{ background: u.status === "error" ? "rgba(248,113,113,0.15)" : "rgba(167,139,250,0.12)" }}>
+                    {u.status === "done" ? <span style={{ color: "#34d399" }}>✓</span>
+                      : u.status === "error" ? <span style={{ color: "#f87171" }}>✕</span>
+                      : <Spinner color="#a78bfa"/>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm truncate" style={{ color: "#475569" }}>{u.filename}</p>
+                    <p className="text-xs" style={{
+                      color: u.status === "error" ? "#f87171" : u.status === "done" ? "#34d399" : "#a78bfa"
+                    }}>
+                      {u.status === "uploading" && "Uploading…"}
+                      {u.status === "processing" && "Chunking & embedding…"}
+                      {u.status === "done" && "Added to knowledge base"}
+                      {u.status === "error" && (u.error ?? "Upload failed")}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Document list */}
+          {docsLoading ? (
+            <div className="flex justify-center py-16"><Spinner color="#555"/></div>
+          ) : docs.length === 0 ? (
+            <div className="text-center py-16" style={{ color: "#94A3B8" }}>
+              <p className="text-3xl mb-3">◈</p>
+              <p className="text-sm">No documents yet</p>
+              <p className="text-xs mt-1" style={{ color: "#94A3B8" }}>Upload files above to start building the knowledge base</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-medium" style={{ color: "#64748B" }}>
+                  {docs.length} document{docs.length !== 1 ? "s" : ""} · {totalChunks} embedded sections
+                </p>
+              </div>
+              <div className="space-y-2">
+                {docs.map(doc => (
+                  <div key={doc.id} className="flex items-center gap-4 px-5 py-4 rounded-2xl group"
+                    style={{ background: "rgba(0,0,0,0.02)", border: "1px solid rgba(0,0,0,0.06)" }}>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: doc.filename.endsWith(".pdf") ? "rgba(248,113,113,0.12)" : "rgba(56,189,248,0.12)" }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+                          fill={doc.filename.endsWith(".pdf") ? "#f87171" : "#38bdf8"} opacity="0.3"/>
+                        <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"
+                          stroke={doc.filename.endsWith(".pdf") ? "#f87171" : "#38bdf8"} strokeWidth="1.5" strokeLinecap="round"/>
+                      </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate" style={{ color: "#1E293B" }}>{doc.filename}</p>
+                      <div className="flex items-center gap-3 mt-0.5">
+                        <span className="text-xs" style={{ color: "#64748B" }}>{fmtDate(doc.createdAt)}</span>
+                        {doc.fileSize && <span className="text-xs" style={{ color: "#94A3B8" }}>{fmtSize(doc.fileSize)}</span>}
+                        <span className="text-xs px-2 py-0.5 rounded-md"
+                          style={{ background: "rgba(52,211,153,0.1)", color: "#34d399", border: "1px solid rgba(52,211,153,0.2)" }}>
+                          {doc.chunkCount} sections embedded
+                        </span>
+                      </div>
+                    </div>
+                    <button onClick={() => deleteDoc(doc.id, doc.filename)}
+                      className="opacity-0 group-hover:opacity-100 transition-opacity text-xs px-3 py-1.5 rounded-lg"
+                      style={{ background: "rgba(248,113,113,0.08)", color: "#f87171", border: "1px solid rgba(248,113,113,0.15)", cursor: "pointer" }}>
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Connections ──────────────────────────────────────────────── */}
+      {tab === "connections" && (
+        <div className="max-w-5xl mx-auto px-8 py-8">
+          <div className="mb-6">
+            <h2 className="text-base font-semibold" style={{ color: "#1E293B" }}>Connections</h2>
+            <p className="text-sm mt-0.5" style={{ color: "#64748B" }}>
+              API keys and model preferences. DB-stored keys override environment variables — useful for switching models
+              without redeploying.
+            </p>
+          </div>
+
+          <div className="grid gap-5">
+
+            {/* OpenAI key */}
+            <div className="rounded-2xl overflow-hidden"
+              style={{ border: "1px solid rgba(0,0,0,0.08)", background: "#FFFFFF" }}>
+              <div className="flex items-center justify-between px-5 pt-4 pb-3"
+                style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ background: "#34d399" }}/>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold" style={{ color: "#1E293B" }}>OpenAI API Key</span>
+                      <span className="text-xs px-2 py-0.5 rounded-md"
+                        style={{ background: "rgba(52,211,153,0.12)", color: "#34d399", border: "1px solid rgba(52,211,153,0.25)" }}>
+                        Embeddings
+                      </span>
+                    </div>
+                    <p className="text-xs mt-0.5" style={{ color: "#64748B" }}>
+                      Used for text-embedding-3-small (document chunking &amp; RAG search). Required for knowledge uploads.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full flex-shrink-0"
+                  style={{
+                    background: secrets?.openaiSet ? "rgba(52,211,153,0.1)" : "rgba(248,113,113,0.08)",
+                    border: `1px solid ${secrets?.openaiSet ? "rgba(52,211,153,0.25)" : "rgba(248,113,113,0.2)"}`,
+                  }}>
+                  <div className="w-1.5 h-1.5 rounded-full"
+                    style={{ background: secrets?.openaiSet ? "#34d399" : "#f87171", boxShadow: secrets?.openaiSet ? "0 0 5px #34d399" : "none" }}/>
+                  <span className="text-xs" style={{ color: secrets?.openaiSet ? "#34d399" : "#f87171" }}>
+                    {secrets?.openaiSet ? "Connected" : "Not set"}
+                  </span>
+                </div>
+              </div>
+              <div className="px-5 py-4 space-y-3">
+                {secrets?.openaiKey && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                    style={{ background: "rgba(0,0,0,0.02)", border: "1px solid rgba(0,0,0,0.06)" }}>
+                    <span className="text-xs" style={{ color: "#64748B" }}>Current:</span>
+                    <span className="text-xs font-mono" style={{ color: "#9CA3AF" }}>{secrets.openaiKey}</span>
+                  </div>
+                )}
+                <input
+                  type="password"
+                  value={newOpenAI}
+                  onChange={e => setNewOpenAI(e.target.value)}
+                  placeholder={secrets?.openaiSet ? "Paste new key to replace…" : "sk-…"}
+                  className="w-full px-4 py-2.5 rounded-xl text-sm outline-none font-mono"
+                  style={{
+                    background: "#FFFFFF",
+                    border: "1px solid rgba(0,0,0,0.1)",
+                    color: "#1E293B",
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Anthropic key */}
+            <div className="rounded-2xl overflow-hidden"
+              style={{ border: "1px solid rgba(0,0,0,0.08)", background: "#FFFFFF" }}>
+              <div className="flex items-center justify-between px-5 pt-4 pb-3"
+                style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ background: "#a78bfa" }}/>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold" style={{ color: "#1E293B" }}>Anthropic API Key</span>
+                      <span className="text-xs px-2 py-0.5 rounded-md"
+                        style={{ background: "rgba(167,139,250,0.12)", color: "#a78bfa", border: "1px solid rgba(167,139,250,0.25)" }}>
+                        Chat
+                      </span>
+                    </div>
+                    <p className="text-xs mt-0.5" style={{ color: "#64748B" }}>
+                      Used for all Claude chat responses. Overrides the ANTHROPIC_API_KEY environment variable.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full flex-shrink-0"
+                  style={{
+                    background: secrets?.anthropicSet ? "rgba(52,211,153,0.1)" : "rgba(248,113,113,0.08)",
+                    border: `1px solid ${secrets?.anthropicSet ? "rgba(52,211,153,0.25)" : "rgba(248,113,113,0.2)"}`,
+                  }}>
+                  <div className="w-1.5 h-1.5 rounded-full"
+                    style={{ background: secrets?.anthropicSet ? "#34d399" : "#f87171", boxShadow: secrets?.anthropicSet ? "0 0 5px #34d399" : "none" }}/>
+                  <span className="text-xs" style={{ color: secrets?.anthropicSet ? "#34d399" : "#f87171" }}>
+                    {secrets?.anthropicSet ? "Connected" : "Not set"}
+                  </span>
+                </div>
+              </div>
+              <div className="px-5 py-4 space-y-3">
+                {secrets?.anthropicKey && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                    style={{ background: "rgba(0,0,0,0.02)", border: "1px solid rgba(0,0,0,0.06)" }}>
+                    <span className="text-xs" style={{ color: "#64748B" }}>Current:</span>
+                    <span className="text-xs font-mono" style={{ color: "#9CA3AF" }}>{secrets.anthropicKey}</span>
+                  </div>
+                )}
+                <input
+                  type="password"
+                  value={newAnthropic}
+                  onChange={e => setNewAnthropic(e.target.value)}
+                  placeholder={secrets?.anthropicSet ? "Paste new key to replace…" : "sk-ant-…"}
+                  className="w-full px-4 py-2.5 rounded-xl text-sm outline-none font-mono"
+                  style={{
+                    background: "#FFFFFF",
+                    border: "1px solid rgba(0,0,0,0.1)",
+                    color: "#1E293B",
+                  }}
+                />
+              </div>
+            </div>
+
+            {/* Model selector */}
+            <div className="rounded-2xl overflow-hidden"
+              style={{ border: "1px solid rgba(0,0,0,0.08)", background: "#FFFFFF" }}>
+              <div className="flex items-center gap-3 px-5 pt-4 pb-3"
+                style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+                <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ background: "#38bdf8" }}/>
+                <div>
+                  <span className="text-sm font-semibold" style={{ color: "#1E293B" }}>Primary Chat Model</span>
+                  <p className="text-xs mt-0.5" style={{ color: "#64748B" }}>
+                    The Claude model used for all chat sessions. Haiku is fastest; Opus is most capable.
+                  </p>
+                </div>
+              </div>
+              <div className="px-5 py-4">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {([
+                    ["claude-haiku-4-5-20251001",   "Claude Haiku 4.5",   "Fastest · lowest cost",      "#38bdf8"],
+                    ["claude-sonnet-4-6",            "Claude Sonnet 4.6",  "Balanced · recommended",     "#a78bfa"],
+                    ["claude-opus-4-7",              "Claude Opus 4.7",    "Most capable · highest cost", "#f59e0b"],
+                  ] as [string, string, string, string][]).map(([id, name, desc, col]) => (
+                    <button key={id} onClick={() => setSelectedModel(id)}
+                      className="flex flex-col items-start px-4 py-3 rounded-xl text-left transition-all"
+                      style={{
+                        background: selectedModel === id ? `${col}18` : "#FFFFFF",
+                        border: `1px solid ${selectedModel === id ? col + "40" : "rgba(0,0,0,0.08)"}`,
+                        cursor: "pointer",
+                        boxShadow: selectedModel === id ? `0 0 16px ${col}20` : "none",
+                      }}>
+                      <span className="text-xs font-semibold" style={{ color: selectedModel === id ? col : "#64748B" }}>{name}</span>
+                      <span className="text-xs mt-0.5" style={{ color: "#64748B" }}>{desc}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* RAG threshold */}
+            <div className="rounded-2xl overflow-hidden"
+              style={{ border: "1px solid rgba(0,0,0,0.08)", background: "#FFFFFF" }}>
+              <div className="flex items-center gap-3 px-5 pt-4 pb-3"
+                style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
+                <div className="w-1 h-8 rounded-full flex-shrink-0" style={{ background: "#f59e0b" }}/>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold" style={{ color: "#1E293B" }}>RAG Similarity Threshold</span>
+                    <span className="text-sm font-mono font-semibold" style={{ color: "#f59e0b" }}>
+                      {ragThreshold.toFixed(2)}
+                    </span>
+                  </div>
+                  <p className="text-xs mt-0.5" style={{ color: "#64748B" }}>
+                    Minimum similarity score for a knowledge chunk to be injected into context. Lower = more chunks, higher = only very relevant matches.
+                  </p>
+                </div>
+              </div>
+              <div className="px-5 py-5">
+                <input
+                  type="range"
+                  min={0.1}
+                  max={0.6}
+                  step={0.01}
+                  value={ragThreshold}
+                  onChange={e => setRagThreshold(parseFloat(e.target.value))}
+                  className="w-full accent-amber-400"
+                  style={{ accentColor: "#f59e0b" }}
+                />
+                <div className="flex justify-between mt-1">
+                  <span className="text-xs" style={{ color: "#94A3B8" }}>0.10 — permissive</span>
+                  <span className="text-xs" style={{ color: "#94A3B8" }}>0.60 — strict</span>
+                </div>
+                <p className="text-xs mt-3" style={{ color: "#64748B" }}>
+                  Tip: most real-world documents score 0.28–0.40. The default 0.25 catches nearly everything relevant.
+                </p>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Save button */}
+          <div className="flex justify-end mt-6">
+            <button
+              onClick={saveSecrets}
+              disabled={secretsSaving}
+              className="text-sm px-6 py-2.5 rounded-xl font-semibold transition-all"
+              style={{
+                background: secretsSaving ? "#F1F5F9" : "linear-gradient(135deg,#8B5CF6,#7C3AED)",
+                color: secretsSaving ? "#94A3B8" : "#fff",
+                border: "none",
+                cursor: secretsSaving ? "not-allowed" : "pointer",
+                boxShadow: secretsSaving ? "none" : "0 0 20px rgba(139,92,246,0.25)",
+              }}>
+              {secretsSaving ? "Saving…" : "Save Connections"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tab: Live Test ─────────────────────────────────────────────────── */}
+      {tab === "test" && (
+        <div className="max-w-5xl mx-auto px-8 py-8">
+          <div className="mb-6">
+            <h2 className="text-base font-semibold" style={{ color: "#1E293B" }}>Live Test</h2>
+            <p className="text-sm mt-0.5" style={{ color: "#64748B" }}>
+              Ask the brain anything. See exactly which knowledge chunks were retrieved and what Claude responds — the complete RAG pipeline, visible.
+            </p>
+          </div>
+
+          {/* Query input */}
+          <div className="flex gap-3 mb-8">
+            <input
+              type="text"
+              value={testQuery}
+              onChange={e => setTestQuery(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && !testLoading && runTest()}
+              placeholder="e.g. What should I do if my HRV is below 30ms?"
+              className="flex-1 px-4 py-3 rounded-xl text-sm outline-none"
+              style={{
+                background: "#FFFFFF",
+                border: "1px solid rgba(0,0,0,0.1)",
+                color: "#1E293B",
+              }}
+            />
+            <button
+              onClick={runTest}
+              disabled={testLoading || !testQuery.trim()}
+              className="px-6 py-3 rounded-xl text-sm font-semibold flex items-center gap-2"
+              style={{
+                background: testLoading || !testQuery.trim()
+                  ? "#F1F5F9"
+                  : "linear-gradient(135deg,#8B5CF6,#7C3AED)",
+                color: testLoading || !testQuery.trim() ? "#94A3B8" : "#fff",
+                border: "none",
+                cursor: testLoading || !testQuery.trim() ? "not-allowed" : "pointer",
+                boxShadow: !testLoading && testQuery.trim() ? "0 0 20px rgba(139,92,246,0.25)" : "none",
+                whiteSpace: "nowrap",
+                transition: "all 0.2s",
+              }}>
+              {testLoading ? <><Spinner color="#a78bfa"/> Running…</> : "▶ Run Test"}
+            </button>
+          </div>
+
+          {/* Error */}
+          {testError && (
+            <div className="rounded-xl px-5 py-4 mb-6 text-sm"
+              style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
+              {testError}
+            </div>
+          )}
+
+          {/* Results */}
+          {testResult && (
+            <div className="space-y-6">
+
+              {/* Retrieved chunks */}
+              <div className="rounded-2xl overflow-hidden"
+                style={{ border: "1px solid rgba(52,211,153,0.2)", background: "rgba(52,211,153,0.03)" }}>
+                <div className="flex items-center justify-between px-5 py-3"
+                  style={{ borderBottom: "1px solid rgba(52,211,153,0.1)", background: "rgba(52,211,153,0.06)" }}>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ background: "#34d399" }}/>
+                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#34d399" }}>
+                      Retrieved Knowledge
+                    </span>
+                    <span className="text-xs px-2 py-0.5 rounded-md ml-1"
+                      style={{ background: "rgba(52,211,153,0.12)", color: "#34d399", border: "1px solid rgba(52,211,153,0.2)" }}>
+                      {testResult.chunks.length} chunks
+                    </span>
+                  </div>
+                  <span className="text-xs" style={{ color: "#64748B" }}>semantic similarity · ranked by relevance</span>
+                </div>
+
+                {testResult.chunks.length === 0 ? (
+                  <div className="px-5 py-8 text-center">
+                    <p className="text-sm" style={{ color: "#64748B" }}>No matching chunks found</p>
+                    <p className="text-xs mt-1" style={{ color: "#94A3B8" }}>
+                      Upload documents in the Knowledge Base tab to enable RAG retrieval
+                    </p>
+                  </div>
+                ) : (
+                  <div className="divide-y" style={{ borderColor: "rgba(0,0,0,0.06)" }}>
+                    {testResult.chunks.map((chunk, i) => {
+                      const pct = Math.round(chunk.similarity * 100);
+                      return (
+                        <div key={i} className="px-5 py-4">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-xs font-medium" style={{ color: "#9CA3AF" }}>Chunk {i + 1}</span>
+                            <div className="flex items-center gap-2">
+                              {/* Similarity bar */}
+                              <div className="w-24 h-1.5 rounded-full" style={{ background: "rgba(0,0,0,0.06)" }}>
+                                <div className="h-full rounded-full"
+                                  style={{
+                                    width: `${pct}%`,
+                                    background: pct > 75 ? "#34d399" : pct > 50 ? "#38bdf8" : "#a78bfa",
+                                  }}/>
+                              </div>
+                              <span className="text-xs font-mono" style={{ color: pct > 75 ? "#34d399" : pct > 50 ? "#38bdf8" : "#a78bfa" }}>
+                                {pct}%
+                              </span>
+                            </div>
+                          </div>
+                          <p className="text-xs leading-relaxed" style={{ color: "#aaa", fontFamily: "'SF Mono', ui-monospace, monospace" }}>
+                            {chunk.content.slice(0, 400)}{chunk.content.length > 400 ? "…" : ""}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Claude response */}
+              <div className="rounded-2xl overflow-hidden"
+                style={{ border: "1px solid rgba(167,139,250,0.2)", background: "rgba(167,139,250,0.03)" }}>
+                <div className="flex items-center gap-2 px-5 py-3"
+                  style={{ borderBottom: "1px solid rgba(167,139,250,0.1)", background: "rgba(167,139,250,0.06)" }}>
+                  <div className="w-2 h-2 rounded-full" style={{ background: "#a78bfa" }}/>
+                  <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#a78bfa" }}>
+                    Brain Response
+                  </span>
+                  <span className="text-xs ml-1" style={{ color: "#64748B" }}>Claude Haiku · live generation</span>
+                </div>
+                <div className="px-5 py-5">
+                  <p className="text-sm leading-relaxed" style={{ color: "#1E293B" }}>
+                    {testResult.response}
+                  </p>
+                </div>
+              </div>
+
+              {/* System prompt (collapsible) */}
+              <div className="rounded-2xl overflow-hidden"
+                style={{ border: "1px solid rgba(0,0,0,0.06)", background: "rgba(0,0,0,0.01)" }}>
+                <button
+                  onClick={() => setShowPrompt(p => !p)}
+                  className="w-full flex items-center justify-between px-5 py-3 text-left"
+                  style={{ background: "none", border: "none", cursor: "pointer" }}>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ background: "#555" }}/>
+                    <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#64748B" }}>
+                      Full System Prompt
+                    </span>
+                    <span className="text-xs" style={{ color: "#94A3B8" }}>{testResult.systemPrompt.length} chars</span>
+                  </div>
+                  <span className="text-xs" style={{ color: "#64748B" }}>{showPrompt ? "▲ hide" : "▼ show"}</span>
+                </button>
+                {showPrompt && (
+                  <pre className="px-5 pb-5 text-xs leading-relaxed whitespace-pre-wrap break-words"
+                    style={{ color: "#64748B", fontFamily: "'SF Mono', ui-monospace, monospace", borderTop: "1px solid rgba(0,0,0,0.06)" }}>
+                    {testResult.systemPrompt}
+                  </pre>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!testResult && !testLoading && !testError && (
+            <div className="text-center py-20" style={{ color: "#94A3B8" }}>
+              <p className="text-4xl mb-4" style={{ filter: "grayscale(1) opacity(0.3)" }}>◈</p>
+              <p className="text-sm" style={{ color: "#94A3B8" }}>Run a test to see the brain in action</p>
+              <p className="text-xs mt-1" style={{ color: "#94A3B8" }}>
+                Retrieved chunks, similarity scores, and Claude&apos;s full response will appear here
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Brain Map ────────────────────────────────────────────────── */}
+      {tab === "map" && (
+        <div className="max-w-5xl mx-auto px-8 py-8">
+          <div className="mb-6">
+            <h2 className="text-base font-semibold" style={{ color: "#1E293B" }}>Brain Map</h2>
+            <p className="text-sm mt-0.5" style={{ color: "#64748B" }}>
+              Every message triggers a single prompt that combines all sources simultaneously.
+              Claude synthesises one response from the full picture — there is no fallback chain.
+            </p>
+          </div>
+          <NeuralNetViz docs={docs} totalChunks={totalChunks} secrets={secrets} />
+        </div>
+      )}
+
+      {/* ── Toast ──────────────────────────────────────────────────────────── */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl text-sm font-medium shadow-2xl"
+          style={{
+            background: toast.ok ? "#F0FDF4" : "#FEF2F2",
+            border: `1px solid ${toast.ok ? "#86EFAC" : "#FECACA"}`,
+            color: toast.ok ? "#166534" : "#991B1B",
+            backdropFilter: "blur(12px)",
+            whiteSpace: "nowrap",
+          }}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+
+function StatusPill({ color, label, active }: { color: string; label: string; active: boolean }) {
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full"
+      style={{ background: active ? `${color}15` : "rgba(0,0,0,0.03)", border: `1px solid ${active ? color + "30" : "rgba(0,0,0,0.08)"}` }}>
+      <div className="w-1.5 h-1.5 rounded-full" style={{ background: active ? color : "#CBD5E1", boxShadow: active ? `0 0 5px ${color}` : "none" }}/>
+      <span className="text-xs" style={{ color: active ? color : "#94A3B8" }}>{label}</span>
+    </div>
+  );
+}
+
+function Spinner({ color }: { color: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" style={{ animation: "spin 0.8s linear infinite" }}>
+      <circle cx="12" cy="12" r="10" fill="none" stroke={color} strokeWidth="3" strokeDasharray="31.4" strokeDashoffset="10"/>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </svg>
+  );
+}
+
+// ── Neural Network Visualization ─────────────────────────────────────────────
+
+function NeuralNetViz({
+  docs,
+  totalChunks,
+  secrets,
+}: {
+  docs: MedicalDoc[];
+  totalChunks: number;
+  secrets: Secrets | null;
+}) {
+  const VW = 1100, VH = 570;
+  const LX  = 178;   // Input node centres X
+  const CLX = 490;   // Claude centre X
+  const RX  = 730;   // Output node centre X (convergence point)
+  const AVX = 940;   // Avatar platform nodes X (right side)
+  const IR  = 27;    // Full input radius
+  const CLR = 52;    // Claude radius
+  const RR  = 33;    // Output radius
+  const AVR = 26;    // Avatar node radius
+
+  const INY = [60, 140, 220, 300, 380, 460];
+  const CLY = 260;
+  const RY  = 260;
+  const AVY = [130, 260, 390];
+
+  const sources = [
+    { id: "config",    label: "Brain Config",   sub: "Persona · Style · Safety",                    color: "#f87171", icon: "⚙",  active: true,            r: IR,  planned: false },
+    { id: "docs",      label: "Knowledge Base", sub: `${docs.length} docs · ${totalChunks} chunks`, color: "#a78bfa", icon: "◈",  active: totalChunks > 0, r: IR,  planned: false },
+    { id: "health",    label: "HealthKit Data", sub: "HRV · Sleep · Steps",                         color: "#34d399", icon: "♥",  active: true,            r: IR,  planned: false },
+    { id: "wearables", label: "Wearables",      sub: "Oura Ring · Whoop",                           color: "#2dd4bf", icon: "⌚", active: false,           r: IR,  planned: true  },
+    { id: "memory",    label: "Session Memory", sub: "Past conversations",                           color: "#38bdf8", icon: "◉",  active: true,            r: IR,  planned: false },
+    { id: "training",  label: "Claude Training",sub: "Medical · health · science",                  color: "#f59e0b", icon: "✦",  active: true,            r: IR,  planned: false },
+  ];
+
+  const avatarSources = [
+    { id: "hedra",      label: "Hedra",      sub: "Avatar generation",   color: "#f97316", icon: "▶" },
+    { id: "elevenlabs", label: "ElevenLabs", sub: "Voice clone · TTS",   color: "#22d3ee", icon: "♪" },
+    { id: "livekit",    label: "LiveKit",    sub: "WebRTC real-time",    color: "#a3e635", icon: "⬡" },
+  ];
+
+  const modelLabel = (m?: string | null) => {
+    if (!m) return "Haiku";
+    if (m.includes("opus"))   return "Opus";
+    if (m.includes("sonnet")) return "Sonnet";
+    return "Haiku";
+  };
+
+  // Bezier: left input right-edge → Claude left-edge
+  const connPath = (srcY: number, srcR: number) => {
+    const fx = LX + srcR, tx = CLX - CLR, cpx = (fx + tx) / 2;
+    return `M ${fx},${srcY} C ${cpx},${srcY} ${cpx},${CLY} ${tx},${CLY}`;
+  };
+
+  // Bezier: avatar node left-edge → output node right-edge (right → left flow)
+  const connPathRight = (srcY: number) => {
+    const fx = AVX - AVR, tx = RX + RR, cpx = (fx + tx) / 2;
+    return `M ${fx},${srcY} C ${cpx},${srcY} ${cpx},${RY} ${tx},${RY}`;
+  };
+
+  const kbGateX = 248, kbGateY = 145;
+  const gW = 74, gH = 38, gCut = 11;
+  const hex = (cx: number, cy: number, w: number, h: number, cut: number) =>
+    `${cx-w/2},${cy} ${cx-w/2+cut},${cy-h/2} ${cx+w/2-cut},${cy-h/2} ${cx+w/2},${cy} ${cx+w/2-cut},${cy+h/2} ${cx-w/2+cut},${cy+h/2}`;
+
+  // Feedback: Output bottom → Session Memory (index 4)
+  const feedbackD = `M ${RX},${RY + RR + 4} C ${RX + 36},${VH - 18} ${340},${VH - 12} ${LX},${INY[4] + IR + 2}`;
+
+  return (
+    <div className="rounded-2xl overflow-hidden"
+      style={{ border: "1px solid rgba(0,0,0,0.08)", background: "rgba(4,4,20,0.8)" }}>
+      <svg viewBox={`0 0 ${VW} ${VH}`} style={{ width: "100%", display: "block" }}>
+        <defs>
+          <filter id="nnv-glow">
+            <feGaussianBlur stdDeviation="4" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <filter id="nnv-glow-sm">
+            <feGaussianBlur stdDeviation="2" result="b"/>
+            <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <radialGradient id="nnv-rg-claude" cx="40%" cy="35%">
+            <stop offset="0%"   stopColor="#a78bfa" stopOpacity="0.55"/>
+            <stop offset="100%" stopColor="#1d4ed8" stopOpacity="0.38"/>
+          </radialGradient>
+          <radialGradient id="nnv-rg-out" cx="50%" cy="50%">
+            <stop offset="0%"   stopColor="#34d399" stopOpacity="0.45"/>
+            <stop offset="60%"  stopColor="#0f766e" stopOpacity="0.28"/>
+            <stop offset="100%" stopColor="#f97316" stopOpacity="0.18"/>
+          </radialGradient>
+          <radialGradient id="nnv-rg-gate" cx="38%" cy="28%">
+            <stop offset="0%"   stopColor="#4c1d95" stopOpacity="1"/>
+            <stop offset="100%" stopColor="#08030f" stopOpacity="1"/>
+          </radialGradient>
+          <linearGradient id="nnv-lg-out"
+            x1={CLX + CLR} y1={RY} x2={RX - RR} y2={RY}
+            gradientUnits="userSpaceOnUse">
+            <stop offset="0%"   stopColor="#7c3aed"/>
+            <stop offset="100%" stopColor="#34d399"/>
+          </linearGradient>
+        </defs>
+
+        {/* Background dots extended to full width */}
+        {Array.from({ length: 11 }, (_, c) =>
+          Array.from({ length: 9 }, (_, r) => (
+            <circle key={`bg-${c}-${r}`} cx={c * 112 + 14} cy={r * 72 + 14} r="1" fill="#fff" fillOpacity="0.025"/>
+          ))
+        )}
+
+        {/* Subtle divider line between Claude output and avatar layer */}
+        <line x1={AVX - 72} y1={28} x2={AVX - 72} y2={VH - 28}
+          stroke="#ffffff" strokeOpacity="0.035" strokeWidth="1" strokeDasharray="4 10"/>
+
+        {/* ── Dim trails: left inputs → Claude ── */}
+        {sources.map((s, i) => (
+          <path key={`trail-${i}`} d={connPath(INY[i], s.r)} fill="none"
+            stroke={s.color}
+            strokeWidth={s.planned ? "0.8" : "1.4"}
+            strokeOpacity={s.planned ? 0.07 : 0.14}
+            strokeDasharray={s.planned ? "3 8" : undefined}/>
+        ))}
+
+        {/* ── Dim trails: avatar nodes → output ── */}
+        {avatarSources.map((s, i) => (
+          <path key={`avtrail-${i}`} d={connPathRight(AVY[i])} fill="none"
+            stroke={s.color} strokeWidth="1.4" strokeOpacity="0.14"/>
+        ))}
+
+        {/* ── Claude → output trail ── */}
+        <path d={`M ${CLX + CLR},${RY} C ${CLX + CLR + 28},${RY - 18} ${RX - RR - 28},${RY - 18} ${RX - RR},${RY}`}
+          fill="none" stroke="#c4b5fd" strokeWidth="1.5" strokeOpacity="0.18"/>
+
+        {/* ── Feedback arc trail ── */}
+        <path d={feedbackD} fill="none"
+          stroke="#38bdf8" strokeWidth="1" strokeOpacity="0.08" strokeDasharray="3 8"/>
+
+        {/* ── Streaming: inputs → Claude ── */}
+        {sources.map((s, i) => {
+          const d = connPath(INY[i], s.r);
+          const dashLen = s.planned ? 5  : 12;
+          const gap     = s.planned ? 24 : 36;
+          const period  = dashLen + gap;
+          const dur     = s.planned ? "3.0s" : `${1.05 + i * 0.12}s`;
+          return (
+            <path key={`stream-${i}`} d={d} fill="none"
+              stroke={s.color} strokeWidth="2.6" strokeLinecap="round"
+              strokeDasharray={`${dashLen} ${gap}`}
+              strokeOpacity={s.planned ? 0.38 : 0.92}
+              filter="url(#nnv-glow-sm)">
+              {/* @ts-ignore */}
+              <animate attributeName="stroke-dashoffset"
+                from="0" to={`-${period}`} dur={dur} repeatCount="indefinite"/>
+            </path>
+          );
+        })}
+
+        {/* ── Streaming: avatar platforms → output (right-to-left flow) ── */}
+        {avatarSources.map((s, i) => {
+          const d = connPathRight(AVY[i]);
+          const dashLen = 10, gap = 32, period = dashLen + gap;
+          return (
+            <path key={`avstream-${i}`} d={d} fill="none"
+              stroke={s.color} strokeWidth="2.6" strokeLinecap="round"
+              strokeDasharray={`${dashLen} ${gap}`} strokeOpacity="0.88"
+              filter="url(#nnv-glow-sm)">
+              {/* @ts-ignore */}
+              <animate attributeName="stroke-dashoffset"
+                from="0" to={`-${period}`} dur={`${1.2 + i * 0.18}s`} repeatCount="indefinite"/>
+            </path>
+          );
+        })}
+
+        {/* ── Claude → output streaming ── */}
+        <path d={`M ${CLX + CLR},${RY} C ${CLX + CLR + 28},${RY - 18} ${RX - RR - 28},${RY - 18} ${RX - RR},${RY}`}
+          fill="none" stroke="#a78bfa" strokeWidth="2.6" strokeLinecap="round"
+          strokeDasharray="12 36" strokeOpacity="0.92" filter="url(#nnv-glow-sm)">
+          {/* @ts-ignore */}
+          <animate attributeName="stroke-dashoffset" from="0" to="-48"
+            dur="1.1s" repeatCount="indefinite"/>
+        </path>
+
+        {/* ── Feedback arc streaming ── */}
+        <path d={feedbackD} fill="none"
+          stroke="#38bdf8" strokeWidth="1.8" strokeLinecap="round"
+          strokeDasharray="8 22" strokeOpacity="0.58" filter="url(#nnv-glow-sm)">
+          {/* @ts-ignore */}
+          <animate attributeName="stroke-dashoffset" from="0" to="-30"
+            dur="2.0s" repeatCount="indefinite"/>
+        </path>
+        <text x={350} y={VH - 10} textAnchor="middle" fontSize="8.5" fill="#38bdf8" fillOpacity="0.5">
+          ↺ session summary saved after each reply — becomes next session&apos;s memory
+        </text>
+
+        {/* ── RAG threshold gate — rendered AFTER streams so it sits on top ── */}
+        <g>
+          <polygon points={hex(kbGateX, kbGateY, gW + 10, gH + 10, gCut + 3)} fill="#04010c"/>
+          <polygon points={hex(kbGateX, kbGateY, gW + 12, gH + 10, gCut + 4)}
+            fill="none" stroke="#a78bfa" strokeWidth="2" strokeOpacity="0.12" filter="url(#nnv-glow)">
+            {/* @ts-ignore */}
+            <animate attributeName="strokeOpacity" values="0.05;0.35;0.05" dur="2.6s" repeatCount="indefinite"/>
+          </polygon>
+          <polygon points={hex(kbGateX, kbGateY, gW, gH, gCut)}
+            fill="url(#nnv-rg-gate)" stroke="#a78bfa" strokeWidth="1.4" strokeOpacity="0.85"/>
+          <line
+            x1={kbGateX - gW/2 + gCut + 6} y1={kbGateY - gH/2 + 5}
+            x2={kbGateX + gW/2 - gCut - 6} y2={kbGateY - gH/2 + 5}
+            stroke="#c4b5fd" strokeWidth="0.7" strokeOpacity="0.4"/>
+          <text x={kbGateX} y={kbGateY - 9} textAnchor="middle" fontSize="6.5" fontWeight="800"
+            fill="#a78bfa" fillOpacity="0.9" letterSpacing="2">RAG FILTER</text>
+          <text x={kbGateX} y={kbGateY + 7} textAnchor="middle" fontSize="12.5" fontWeight="700" fill="#e2d9ff">
+            {`≥ ${(secrets?.ragThreshold ?? 0.25).toFixed(2)}`}
+          </text>
+          <rect x={kbGateX - 23} y={kbGateY + 12} width={46} height={4} rx="2"
+            fill="rgba(167,139,250,0.12)" stroke="#a78bfa" strokeWidth="0.5" strokeOpacity="0.4"/>
+          <rect x={kbGateX - 23} y={kbGateY + 12}
+            width={46 * Math.min(secrets?.ragThreshold ?? 0.25, 1)}
+            height={4} rx="2" fill="#a78bfa" fillOpacity="0.88"/>
+        </g>
+
+        {/* ── Section labels ── */}
+        <text x={LX}  y={18} textAnchor="middle" fontSize="8" fill="#323248" fontWeight="600" letterSpacing="2">INPUTS</text>
+        <text x={CLX} y={CLY - CLR - 18} textAnchor="middle" fontSize="8" fill="#504070" fontWeight="600" letterSpacing="2">GENERATION</text>
+        <text x={AVX} y={18} textAnchor="middle" fontSize="8" fill="#2a3318" fontWeight="600" letterSpacing="2">PRESENTATION</text>
+
+        {/* ── Input nodes (left) ── */}
+        {sources.map((s, i) => (
+          <g key={s.id}>
+            <text x={LX - s.r - 11} y={INY[i] - 4}
+              textAnchor="end" fontSize="11.5" fontWeight="600"
+              fill={s.planned ? "#2a7a74" : (s.active ? "#ddddf0" : "#505060")}>
+              {s.label}
+            </text>
+            <text x={LX - s.r - 11} y={INY[i] + 11}
+              textAnchor="end" fontSize="9"
+              fill={s.planned ? "#1e5550" : (s.active ? "#666" : "#383848")}>
+              {s.sub}
+            </text>
+            {s.planned && (
+              <text x={LX - s.r - 11} y={INY[i] + 24}
+                textAnchor="end" fontSize="7" fill="#1a4040" letterSpacing="1">
+                PLANNED
+              </text>
+            )}
+            <circle cx={LX} cy={INY[i]} r={s.r}
+              fill={s.color} fillOpacity={s.planned ? 0.07 : (s.active ? 0.14 : 0.05)}
+              stroke={s.color} strokeWidth="1.5"
+              strokeOpacity={s.planned ? 0.3 : (s.active ? 0.6 : 0.12)}
+              strokeDasharray={s.planned ? "5 4" : undefined}/>
+            <text x={LX} y={INY[i] + 5} textAnchor="middle" fontSize="14"
+              fill={s.color} fillOpacity={s.planned ? 0.35 : (s.active ? 1 : 0.22)}>
+              {s.icon}
+            </text>
+            {(s.active && !s.planned) && (
+              <circle cx={LX + s.r - 5} cy={INY[i] - s.r + 5} r="3.5"
+                fill={s.color} filter="url(#nnv-glow-sm)">
+                {/* @ts-ignore */}
+                <animate attributeName="opacity" values="1;0.2;1" dur="2.4s" repeatCount="indefinite"/>
+              </circle>
+            )}
+          </g>
+        ))}
+
+        {/* ── Claude node ── */}
+        <circle cx={CLX} cy={CLY} r={CLR + 12} fill="none" stroke="#7c3aed" strokeWidth="8" strokeOpacity="0.1" filter="url(#nnv-glow)">
+          {/* @ts-ignore */}
+          <animate attributeName="strokeOpacity" values="0.1;0.35;0.1" dur="2.8s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx={CLX} cy={CLY} r={CLR}
+          fill="url(#nnv-rg-claude)" stroke="#a78bfa" strokeWidth="1.5" strokeOpacity="0.8" filter="url(#nnv-glow)"/>
+        <text x={CLX} y={CLY - 10} textAnchor="middle" fontSize="22" fill="#c4b5fd" filter="url(#nnv-glow)">◈</text>
+        <text x={CLX} y={CLY + 13} textAnchor="middle" fontSize="13" fontWeight="700" fill="#e8e8f0">Claude</text>
+        <text x={CLX} y={CLY + 30} textAnchor="middle" fontSize="10" fill="#a78bfa">{modelLabel(secrets?.primaryModel)}</text>
+
+        {/* ── Output node (convergence point) ── */}
+        <circle cx={RX} cy={RY} r={RR + 10} fill="none" stroke="#34d399" strokeWidth="7" strokeOpacity="0.08" filter="url(#nnv-glow)">
+          {/* @ts-ignore */}
+          <animate attributeName="strokeOpacity" values="0.06;0.28;0.06" dur="3.0s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx={RX} cy={RY} r={RR}
+          fill="url(#nnv-rg-out)" stroke="#34d399" strokeWidth="1.5" strokeOpacity="0.6" filter="url(#nnv-glow)"/>
+        <text x={RX} y={RY - 5}  textAnchor="middle" fontSize="18" fill="#34d399">⊕</text>
+        <text x={RX} y={RY + 13} textAnchor="middle" fontSize="11" fontWeight="600" fill="#d0d0e8">Output</text>
+        <text x={RX} y={RY - RR - 12} textAnchor="middle" fontSize="8" fill="#34d399" fillOpacity="0.55">AI · Avatar · Voice</text>
+
+        {/* ── Avatar platform nodes (right side) ── */}
+        {avatarSources.map((s, i) => (
+          <g key={s.id}>
+            <text x={AVX + AVR + 12} y={AVY[i] - 4}
+              textAnchor="start" fontSize="11.5" fontWeight="600" fill="#ddddf0">
+              {s.label}
+            </text>
+            <text x={AVX + AVR + 12} y={AVY[i] + 11}
+              textAnchor="start" fontSize="9" fill="#666">
+              {s.sub}
+            </text>
+            <circle cx={AVX} cy={AVY[i]} r={AVR}
+              fill={s.color} fillOpacity="0.14"
+              stroke={s.color} strokeWidth="1.5" strokeOpacity="0.65"/>
+            <text x={AVX} y={AVY[i] + 5} textAnchor="middle" fontSize="14" fill={s.color}>
+              {s.icon}
+            </text>
+            <circle cx={AVX - AVR + 5} cy={AVY[i] - AVR + 5} r="3.5"
+              fill={s.color} filter="url(#nnv-glow-sm)">
+              {/* @ts-ignore */}
+              <animate attributeName="opacity" values="1;0.2;1" dur={`${2.2 + i * 0.35}s`} repeatCount="indefinite"/>
+            </circle>
+          </g>
+        ))}
+
+      </svg>
+
+      {/* Legend */}
+      <div className="px-6 py-4 flex flex-wrap items-center justify-center gap-4"
+        style={{ borderTop: "1px solid rgba(0,0,0,0.06)" }}>
+        {[
+          { color: "#f87171", label: "Brain Config — always injected",                     dim: false },
+          { color: "#a78bfa", label: "Knowledge Base — if similarity ≥ threshold",         dim: false },
+          { color: "#34d399", label: "HealthKit — from device or inline data",             dim: false },
+          { color: "#2dd4bf", label: "Wearables — Oura Ring · Whoop (planned)",             dim: true  },
+          { color: "#38bdf8", label: "Session Memory — last summary (feedback loop)",      dim: false },
+          { color: "#f59e0b", label: "Claude Training — always available",                 dim: false },
+          { color: "#f97316", label: "Hedra — avatar generation",                          dim: false },
+          { color: "#22d3ee", label: "ElevenLabs — voice cloning · TTS",                   dim: false },
+          { color: "#a3e635", label: "LiveKit — WebRTC real-time delivery",                dim: false },
+        ].map(item => (
+          <div key={item.label} className="flex items-center gap-1.5">
+            <div className="w-2 h-2 rounded-full flex-shrink-0"
+              style={{ background: item.color, opacity: item.dim ? 0.45 : 1 }}/>
+            <span className="text-xs" style={{ color: item.dim ? "#2a5050" : "#555" }}>{item.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}

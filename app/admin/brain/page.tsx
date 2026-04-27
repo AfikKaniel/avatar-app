@@ -1443,21 +1443,28 @@ function NeuralNetViz({
   totalChunks: number;
   secrets: Secrets | null;
 }) {
-  const VW = 1100, VH = 570;
-  const LX  = 178;   // Input node centres X
-  const CLX = 490;   // Claude centre X
-  const RX  = 730;   // Output node centre X (convergence point)
-  const AVX = 940;   // Avatar platform nodes X (right side)
-  const IR  = 27;    // Full input radius
-  const CLR = 52;    // Claude radius
-  const RR  = 33;    // Output radius
-  const AVR = 26;    // Avatar node radius
+  const VW = 1300, VH = 540;
 
-  const INY = [60, 140, 220, 300, 380, 460];
-  const CLY = 260;
-  const RY  = 260;
-  const AVY = [130, 260, 390];
+  // Left: inputs
+  const LX = 165, IR = 27;
+  const INY = [55, 130, 210, 290, 370, 450];
 
+  // Center: Claude (generation)
+  const CLX = 415, CLY = 265, CLR = 52;
+
+  // Middle: Output (convergence of brain + avatar pipeline)
+  const RX = 635, RY = 265, RR = 33;
+
+  // Avatar pipeline — 3 right-hand stages flowing right → left into Output
+  // Stage 1 (DELIVERY): LiveKit
+  const LKX = 810, LKY = 265, LKR = 26;
+  // Stage 2 (ASSEMBLY): Hedra
+  const HX = 990, HY = 265, HR = 30;
+  // Stage 3 (CREATION): Fal.AI · Stability AI · ElevenLabs
+  const CRX = 1165, CRR = 24;
+  const CRY = [115, 265, 415];
+
+  // ── Node data ──────────────────────────────────────────────────────────────
   const sources = [
     { id: "config",    label: "Brain Config",   sub: "Persona · Style · Safety",                    color: "#f87171", icon: "⚙",  active: true,            r: IR,  planned: false },
     { id: "docs",      label: "Knowledge Base", sub: `${docs.length} docs · ${totalChunks} chunks`, color: "#a78bfa", icon: "◈",  active: totalChunks > 0, r: IR,  planned: false },
@@ -1467,10 +1474,10 @@ function NeuralNetViz({
     { id: "training",  label: "Claude Training",sub: "Medical · health · science",                  color: "#f59e0b", icon: "✦",  active: true,            r: IR,  planned: false },
   ];
 
-  const avatarSources = [
-    { id: "hedra",      label: "Hedra",      sub: "Avatar generation",   color: "#f97316", icon: "▶" },
-    { id: "elevenlabs", label: "ElevenLabs", sub: "Voice clone · TTS",   color: "#22d3ee", icon: "♪" },
-    { id: "livekit",    label: "LiveKit",    sub: "WebRTC real-time",    color: "#a3e635", icon: "⬡" },
+  const creationNodes = [
+    { id: "fal",        label: "Fal.AI",       sub: "Body avatar · flux-pulid", color: "#e879f9", icon: "✦" },
+    { id: "stability",  label: "Stability AI", sub: "Face portrait stylize",    color: "#fb923c", icon: "◈" },
+    { id: "elevenlabs", label: "ElevenLabs",   sub: "Voice clone · TTS",        color: "#22d3ee", icon: "♪" },
   ];
 
   const modelLabel = (m?: string | null) => {
@@ -1480,28 +1487,39 @@ function NeuralNetViz({
     return "Haiku";
   };
 
-  // Bezier: left input right-edge → Claude left-edge
+  // ── Path generators ────────────────────────────────────────────────────────
+  // Left inputs → Claude
   const connPath = (srcY: number, srcR: number) => {
     const fx = LX + srcR, tx = CLX - CLR, cpx = (fx + tx) / 2;
     return `M ${fx},${srcY} C ${cpx},${srcY} ${cpx},${CLY} ${tx},${CLY}`;
   };
 
-  // Bezier: avatar node left-edge → output node right-edge (right → left flow)
-  const connPathRight = (srcY: number) => {
-    const fx = AVX - AVR, tx = RX + RR, cpx = (fx + tx) / 2;
-    // When srcY === RY the bezier collapses to a straight line — bow it upward instead
-    const sameY = Math.abs(srcY - RY) < 6;
-    const cp1y = sameY ? srcY - 32 : srcY;
-    const cp2y = sameY ? RY  - 32 : RY;
-    return `M ${fx},${srcY} C ${cpx},${cp1y} ${cpx},${cp2y} ${tx},${RY}`;
+  // Creation node[i] → Hedra (right-to-left, converging)
+  const connCreation = (i: number) => {
+    const fx = CRX - CRR, fy = CRY[i], tx = HX + HR, ty = HY;
+    const cpx = (fx + tx) / 2;
+    const sameY = Math.abs(fy - ty) < 6;
+    const cp1y = sameY ? fy - 30 : fy;
+    const cp2y = sameY ? ty - 30 : ty;
+    return `M ${fx},${fy} C ${cpx},${cp1y} ${cpx},${cp2y} ${tx},${ty}`;
   };
 
-  const kbGateX = 248, kbGateY = 145;
+  // Hedra → LiveKit (same Y, bow upward)
+  const connHedraToLK = `M ${HX - HR},${HY} C ${(HX-HR+LKX+LKR)/2},${HY-28} ${(HX-HR+LKX+LKR)/2},${LKY-28} ${LKX + LKR},${LKY}`;
+
+  // LiveKit → Output (same Y, bow upward)
+  const connLKToOut = `M ${LKX - LKR},${LKY} C ${(LKX-LKR+RX+RR)/2},${LKY-28} ${(LKX-LKR+RX+RR)/2},${RY-28} ${RX + RR},${RY}`;
+
+  // Claude → Output
+  const connClaudeOut = `M ${CLX + CLR},${CLY} C ${CLX+CLR+28},${CLY-18} ${RX-RR-28},${RY-18} ${RX - RR},${RY}`;
+
+  // RAG filter gate (on the Knowledge Base path)
+  const kbGateX = 248, kbGateY = 140;
   const gW = 74, gH = 38, gCut = 11;
   const hex = (cx: number, cy: number, w: number, h: number, cut: number) =>
     `${cx-w/2},${cy} ${cx-w/2+cut},${cy-h/2} ${cx+w/2-cut},${cy-h/2} ${cx+w/2},${cy} ${cx+w/2-cut},${cy+h/2} ${cx-w/2+cut},${cy+h/2}`;
 
-  // Feedback: Output bottom → Session Memory (index 4)
+  // Feedback arc: Output bottom → Session Memory (INY[4])
   const feedbackD = `M ${RX},${RY + RR + 4} C ${RX + 36},${VH - 18} ${340},${VH - 12} ${LX},${INY[4] + IR + 2}`;
 
   return (
@@ -1530,55 +1548,66 @@ function NeuralNetViz({
             <stop offset="0%"   stopColor="#4c1d95" stopOpacity="1"/>
             <stop offset="100%" stopColor="#08030f" stopOpacity="1"/>
           </radialGradient>
-          <linearGradient id="nnv-lg-out"
-            x1={CLX + CLR} y1={RY} x2={RX - RR} y2={RY}
-            gradientUnits="userSpaceOnUse">
-            <stop offset="0%"   stopColor="#7c3aed"/>
-            <stop offset="100%" stopColor="#34d399"/>
-          </linearGradient>
+          <radialGradient id="nnv-rg-hedra" cx="40%" cy="35%">
+            <stop offset="0%"   stopColor="#f97316" stopOpacity="0.5"/>
+            <stop offset="100%" stopColor="#7c2d12" stopOpacity="0.3"/>
+          </radialGradient>
+          <radialGradient id="nnv-rg-lk" cx="40%" cy="35%">
+            <stop offset="0%"   stopColor="#a3e635" stopOpacity="0.45"/>
+            <stop offset="100%" stopColor="#1a2e05" stopOpacity="0.3"/>
+          </radialGradient>
         </defs>
 
-        {/* Background dots extended to full width */}
-        {Array.from({ length: 11 }, (_, c) =>
+        {/* Background dots */}
+        {Array.from({ length: 12 }, (_, c) =>
           Array.from({ length: 9 }, (_, r) => (
-            <circle key={`bg-${c}-${r}`} cx={c * 112 + 14} cy={r * 72 + 14} r="1" fill="#fff" fillOpacity="0.025"/>
+            <circle key={`bg-${c}-${r}`} cx={c * 112 + 14} cy={r * 65 + 14} r="1" fill="#fff" fillOpacity="0.025"/>
           ))
         )}
 
-        {/* Subtle divider line between Claude output and avatar layer */}
-        <line x1={AVX - 72} y1={28} x2={AVX - 72} y2={VH - 28}
-          stroke="#ffffff" strokeOpacity="0.035" strokeWidth="1" strokeDasharray="4 10"/>
+        {/* Stage dividers */}
+        {[530, 720, 900, 1080].map(x => (
+          <line key={x} x1={x} y1={28} x2={x} y2={VH - 28}
+            stroke="#ffffff" strokeOpacity="0.03" strokeWidth="1" strokeDasharray="4 10"/>
+        ))}
 
-        {/* ── Dim trails: left inputs → Claude ── */}
+        {/* ── TRAIL LAYER ── */}
+
+        {/* Inputs → Claude */}
         {sources.map((s, i) => (
           <path key={`trail-${i}`} d={connPath(INY[i], s.r)} fill="none"
-            stroke={s.color}
-            strokeWidth={s.planned ? "0.8" : "1.4"}
+            stroke={s.color} strokeWidth={s.planned ? "0.8" : "1.4"}
             strokeOpacity={s.planned ? 0.07 : 0.14}
             strokeDasharray={s.planned ? "3 8" : undefined}/>
         ))}
 
-        {/* ── Dim trails: avatar nodes → output ── */}
-        {avatarSources.map((s, i) => (
-          <path key={`avtrail-${i}`} d={connPathRight(AVY[i])} fill="none"
+        {/* Claude → Output */}
+        <path d={connClaudeOut} fill="none" stroke="#c4b5fd" strokeWidth="1.5" strokeOpacity="0.18"/>
+
+        {/* Creation nodes → Hedra */}
+        {creationNodes.map((s, i) => (
+          <path key={`cr-trail-${i}`} d={connCreation(i)} fill="none"
             stroke={s.color} strokeWidth="1.4" strokeOpacity="0.14"/>
         ))}
 
-        {/* ── Claude → output trail ── */}
-        <path d={`M ${CLX + CLR},${RY} C ${CLX + CLR + 28},${RY - 18} ${RX - RR - 28},${RY - 18} ${RX - RR},${RY}`}
-          fill="none" stroke="#c4b5fd" strokeWidth="1.5" strokeOpacity="0.18"/>
+        {/* Hedra → LiveKit */}
+        <path d={connHedraToLK} fill="none" stroke="#f97316" strokeWidth="1.4" strokeOpacity="0.16"/>
 
-        {/* ── Feedback arc trail ── */}
+        {/* LiveKit → Output */}
+        <path d={connLKToOut} fill="none" stroke="#a3e635" strokeWidth="1.4" strokeOpacity="0.16"/>
+
+        {/* Feedback arc */}
         <path d={feedbackD} fill="none"
           stroke="#38bdf8" strokeWidth="1" strokeOpacity="0.08" strokeDasharray="3 8"/>
 
-        {/* ── Streaming: inputs → Claude ── */}
+        {/* ── STREAMING LAYER ── */}
+
+        {/* Inputs → Claude */}
         {sources.map((s, i) => {
           const d = connPath(INY[i], s.r);
-          const dashLen = s.planned ? 5  : 12;
+          const dashLen = s.planned ? 5 : 12;
           const gap     = s.planned ? 24 : 36;
           const period  = dashLen + gap;
-          const dur     = s.planned ? "3.0s" : `${1.05 + i * 0.12}s`;
           return (
             <path key={`stream-${i}`} d={d} fill="none"
               stroke={s.color} strokeWidth="2.6" strokeLinecap="round"
@@ -1587,49 +1616,61 @@ function NeuralNetViz({
               filter="url(#nnv-glow-sm)">
               {/* @ts-ignore */}
               <animate attributeName="stroke-dashoffset"
-                from="0" to={`-${period}`} dur={dur} repeatCount="indefinite"/>
+                from="0" to={`-${period}`}
+                dur={s.planned ? "3.0s" : `${1.05 + i * 0.12}s`}
+                repeatCount="indefinite"/>
             </path>
           );
         })}
 
-        {/* ── Streaming: avatar platforms → output (right-to-left flow) ── */}
-        {avatarSources.map((s, i) => {
-          const d = connPathRight(AVY[i]);
-          const dashLen = 10, gap = 32, period = dashLen + gap;
-          return (
-            <path key={`avstream-${i}`} d={d} fill="none"
-              stroke={s.color} strokeWidth="2.6" strokeLinecap="round"
-              strokeDasharray={`${dashLen} ${gap}`} strokeOpacity="0.88"
-              filter="url(#nnv-glow-sm)">
-              {/* @ts-ignore */}
-              <animate attributeName="stroke-dashoffset"
-                from="0" to={`-${period}`} dur={`${1.2 + i * 0.18}s`} repeatCount="indefinite"/>
-            </path>
-          );
-        })}
-
-        {/* ── Claude → output streaming ── */}
-        <path d={`M ${CLX + CLR},${RY} C ${CLX + CLR + 28},${RY - 18} ${RX - RR - 28},${RY - 18} ${RX - RR},${RY}`}
-          fill="none" stroke="#a78bfa" strokeWidth="2.6" strokeLinecap="round"
-          strokeDasharray="12 36" strokeOpacity="0.92" filter="url(#nnv-glow-sm)">
+        {/* Claude → Output */}
+        <path d={connClaudeOut} fill="none" stroke="#a78bfa" strokeWidth="2.6"
+          strokeLinecap="round" strokeDasharray="12 36" strokeOpacity="0.92"
+          filter="url(#nnv-glow-sm)">
           {/* @ts-ignore */}
-          <animate attributeName="stroke-dashoffset" from="0" to="-48"
-            dur="1.1s" repeatCount="indefinite"/>
+          <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="1.1s" repeatCount="indefinite"/>
         </path>
 
-        {/* ── Feedback arc streaming ── */}
-        <path d={feedbackD} fill="none"
-          stroke="#38bdf8" strokeWidth="1.8" strokeLinecap="round"
-          strokeDasharray="8 22" strokeOpacity="0.58" filter="url(#nnv-glow-sm)">
+        {/* Creation → Hedra (right-to-left) */}
+        {creationNodes.map((s, i) => (
+          <path key={`cr-stream-${i}`} d={connCreation(i)} fill="none"
+            stroke={s.color} strokeWidth="2.6" strokeLinecap="round"
+            strokeDasharray="10 32" strokeOpacity="0.88"
+            filter="url(#nnv-glow-sm)">
+            {/* @ts-ignore */}
+            <animate attributeName="stroke-dashoffset" from="0" to="-42"
+              dur={`${1.1 + i * 0.2}s`} repeatCount="indefinite"/>
+          </path>
+        ))}
+
+        {/* Hedra → LiveKit */}
+        <path d={connHedraToLK} fill="none" stroke="#f97316" strokeWidth="2.6"
+          strokeLinecap="round" strokeDasharray="12 36" strokeOpacity="0.92"
+          filter="url(#nnv-glow-sm)">
           {/* @ts-ignore */}
-          <animate attributeName="stroke-dashoffset" from="0" to="-30"
-            dur="2.0s" repeatCount="indefinite"/>
+          <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="0.9s" repeatCount="indefinite"/>
         </path>
-        <text x={350} y={VH - 10} textAnchor="middle" fontSize="8.5" fill="#38bdf8" fillOpacity="0.5">
+
+        {/* LiveKit → Output */}
+        <path d={connLKToOut} fill="none" stroke="#a3e635" strokeWidth="2.6"
+          strokeLinecap="round" strokeDasharray="12 36" strokeOpacity="0.92"
+          filter="url(#nnv-glow-sm)">
+          {/* @ts-ignore */}
+          <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="0.85s" repeatCount="indefinite"/>
+        </path>
+
+        {/* Feedback arc */}
+        <path d={feedbackD} fill="none" stroke="#38bdf8" strokeWidth="1.8"
+          strokeLinecap="round" strokeDasharray="8 22" strokeOpacity="0.58"
+          filter="url(#nnv-glow-sm)">
+          {/* @ts-ignore */}
+          <animate attributeName="stroke-dashoffset" from="0" to="-30" dur="2.0s" repeatCount="indefinite"/>
+        </path>
+        <text x={310} y={VH - 10} textAnchor="middle" fontSize="8.5" fill="#38bdf8" fillOpacity="0.5">
           ↺ session summary saved after each reply — becomes next session&apos;s memory
         </text>
 
-        {/* ── RAG threshold gate — rendered AFTER streams so it sits on top ── */}
+        {/* ── RAG gate (sits on top of streams) ── */}
         <g>
           <polygon points={hex(kbGateX, kbGateY, gW + 10, gH + 10, gCut + 3)} fill="#04010c"/>
           <polygon points={hex(kbGateX, kbGateY, gW + 12, gH + 10, gCut + 4)}
@@ -1639,9 +1680,8 @@ function NeuralNetViz({
           </polygon>
           <polygon points={hex(kbGateX, kbGateY, gW, gH, gCut)}
             fill="url(#nnv-rg-gate)" stroke="#a78bfa" strokeWidth="1.4" strokeOpacity="0.85"/>
-          <line
-            x1={kbGateX - gW/2 + gCut + 6} y1={kbGateY - gH/2 + 5}
-            x2={kbGateX + gW/2 - gCut - 6} y2={kbGateY - gH/2 + 5}
+          <line x1={kbGateX - gW/2 + gCut + 6} y1={kbGateY - gH/2 + 5}
+            x2={kbGateX + gW/2 - gCut - 6}     y2={kbGateY - gH/2 + 5}
             stroke="#c4b5fd" strokeWidth="0.7" strokeOpacity="0.4"/>
           <text x={kbGateX} y={kbGateY - 9} textAnchor="middle" fontSize="6.5" fontWeight="800"
             fill="#a78bfa" fillOpacity="0.9" letterSpacing="2">RAG FILTER</text>
@@ -1657,25 +1697,25 @@ function NeuralNetViz({
 
         {/* ── Section labels ── */}
         <text x={LX}  y={18} textAnchor="middle" fontSize="8" fill="#323248" fontWeight="600" letterSpacing="2">INPUTS</text>
-        <text x={CLX} y={CLY - CLR - 18} textAnchor="middle" fontSize="8" fill="#504070" fontWeight="600" letterSpacing="2">GENERATION</text>
-        <text x={AVX} y={18} textAnchor="middle" fontSize="8" fill="#2a3318" fontWeight="600" letterSpacing="2">PRESENTATION</text>
+        <text x={CLX} y={18} textAnchor="middle" fontSize="8" fill="#504070" fontWeight="600" letterSpacing="2">GENERATION</text>
+        <text x={RX}  y={18} textAnchor="middle" fontSize="8" fill="#2d4a3e" fontWeight="600" letterSpacing="2">OUTPUT</text>
+        <text x={LKX} y={18} textAnchor="middle" fontSize="8" fill="#2a3318" fontWeight="600" letterSpacing="2">DELIVERY</text>
+        <text x={HX}  y={18} textAnchor="middle" fontSize="8" fill="#3d2010" fontWeight="600" letterSpacing="2">ASSEMBLY</text>
+        <text x={CRX} y={18} textAnchor="middle" fontSize="8" fill="#2a1a3a" fontWeight="600" letterSpacing="2">CREATION</text>
 
-        {/* ── Input nodes (left) ── */}
+        {/* ── Input nodes ── */}
         {sources.map((s, i) => (
           <g key={s.id}>
-            <text x={LX - s.r - 11} y={INY[i] - 4}
-              textAnchor="end" fontSize="11.5" fontWeight="600"
+            <text x={LX - s.r - 11} y={INY[i] - 4} textAnchor="end" fontSize="11.5" fontWeight="600"
               fill={s.planned ? "#2a7a74" : (s.active ? "#ddddf0" : "#505060")}>
               {s.label}
             </text>
-            <text x={LX - s.r - 11} y={INY[i] + 11}
-              textAnchor="end" fontSize="9"
+            <text x={LX - s.r - 11} y={INY[i] + 11} textAnchor="end" fontSize="9"
               fill={s.planned ? "#1e5550" : (s.active ? "#666" : "#383848")}>
               {s.sub}
             </text>
             {s.planned && (
-              <text x={LX - s.r - 11} y={INY[i] + 24}
-                textAnchor="end" fontSize="7" fill="#1a4040" letterSpacing="1">
+              <text x={LX - s.r - 11} y={INY[i] + 24} textAnchor="end" fontSize="7" fill="#1a4040" letterSpacing="1">
                 PLANNED
               </text>
             )}
@@ -1689,8 +1729,7 @@ function NeuralNetViz({
               {s.icon}
             </text>
             {(s.active && !s.planned) && (
-              <circle cx={LX + s.r - 5} cy={INY[i] - s.r + 5} r="3.5"
-                fill={s.color} filter="url(#nnv-glow-sm)">
+              <circle cx={LX + s.r - 5} cy={INY[i] - s.r + 5} r="3.5" fill={s.color} filter="url(#nnv-glow-sm)">
                 {/* @ts-ignore */}
                 <animate attributeName="opacity" values="1;0.2;1" dur="2.4s" repeatCount="indefinite"/>
               </circle>
@@ -1709,7 +1748,7 @@ function NeuralNetViz({
         <text x={CLX} y={CLY + 13} textAnchor="middle" fontSize="13" fontWeight="700" fill="#e8e8f0">Claude</text>
         <text x={CLX} y={CLY + 30} textAnchor="middle" fontSize="10" fill="#a78bfa">{modelLabel(secrets?.primaryModel)}</text>
 
-        {/* ── Output node (convergence point) ── */}
+        {/* ── Output node ── */}
         <circle cx={RX} cy={RY} r={RR + 10} fill="none" stroke="#34d399" strokeWidth="7" strokeOpacity="0.08" filter="url(#nnv-glow)">
           {/* @ts-ignore */}
           <animate attributeName="strokeOpacity" values="0.06;0.28;0.06" dur="3.0s" repeatCount="indefinite"/>
@@ -1720,27 +1759,54 @@ function NeuralNetViz({
         <text x={RX} y={RY + 13} textAnchor="middle" fontSize="11" fontWeight="600" fill="#d0d0e8">Output</text>
         <text x={RX} y={RY - RR - 12} textAnchor="middle" fontSize="8" fill="#34d399" fillOpacity="0.55">AI · Avatar · Voice</text>
 
-        {/* ── Avatar platform nodes (right side) ── */}
-        {avatarSources.map((s, i) => (
+        {/* ── LiveKit node (delivery) ── */}
+        <circle cx={LKX} cy={LKY} r={LKR + 8} fill="none" stroke="#a3e635" strokeWidth="6" strokeOpacity="0.08" filter="url(#nnv-glow)">
+          {/* @ts-ignore */}
+          <animate attributeName="strokeOpacity" values="0.04;0.22;0.04" dur="2.5s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx={LKX} cy={LKY} r={LKR}
+          fill="url(#nnv-rg-lk)" stroke="#a3e635" strokeWidth="1.5" strokeOpacity="0.65" filter="url(#nnv-glow)"/>
+        <text x={LKX} y={LKY + 5} textAnchor="middle" fontSize="16" fill="#a3e635">⬡</text>
+        <text x={LKX} y={LKY + LKR + 16} textAnchor="middle" fontSize="11" fontWeight="600" fill="#ddddf0">LiveKit</text>
+        <text x={LKX} y={LKY + LKR + 28} textAnchor="middle" fontSize="8.5" fill="#4a5e1a">WebRTC stream</text>
+        <circle cx={LKX + LKR - 5} cy={LKY - LKR + 5} r="3.5" fill="#a3e635" filter="url(#nnv-glow-sm)">
+          {/* @ts-ignore */}
+          <animate attributeName="opacity" values="1;0.2;1" dur="2.1s" repeatCount="indefinite"/>
+        </circle>
+
+        {/* ── Hedra node (assembly) ── */}
+        <circle cx={HX} cy={HY} r={HR + 9} fill="none" stroke="#f97316" strokeWidth="6" strokeOpacity="0.08" filter="url(#nnv-glow)">
+          {/* @ts-ignore */}
+          <animate attributeName="strokeOpacity" values="0.04;0.25;0.04" dur="2.3s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx={HX} cy={HY} r={HR}
+          fill="url(#nnv-rg-hedra)" stroke="#f97316" strokeWidth="1.5" strokeOpacity="0.7" filter="url(#nnv-glow)"/>
+        <text x={HX} y={HY + 6} textAnchor="middle" fontSize="18" fill="#f97316">▶</text>
+        <text x={HX} y={HY + HR + 16} textAnchor="middle" fontSize="11" fontWeight="600" fill="#ddddf0">Hedra</text>
+        <text x={HX} y={HY + HR + 28} textAnchor="middle" fontSize="8.5" fill="#6b3010">Talking head</text>
+        <circle cx={HX + HR - 5} cy={HY - HR + 5} r="3.5" fill="#f97316" filter="url(#nnv-glow-sm)">
+          {/* @ts-ignore */}
+          <animate attributeName="opacity" values="1;0.2;1" dur="1.9s" repeatCount="indefinite"/>
+        </circle>
+
+        {/* ── Creation nodes: Fal · Stability · ElevenLabs ── */}
+        {creationNodes.map((s, i) => (
           <g key={s.id}>
-            <text x={AVX + AVR + 12} y={AVY[i] - 4}
-              textAnchor="start" fontSize="11.5" fontWeight="600" fill="#ddddf0">
+            <text x={CRX + CRR + 12} y={CRY[i] - 4} textAnchor="start" fontSize="11.5" fontWeight="600" fill="#ddddf0">
               {s.label}
             </text>
-            <text x={AVX + AVR + 12} y={AVY[i] + 11}
-              textAnchor="start" fontSize="9" fill="#666">
+            <text x={CRX + CRR + 12} y={CRY[i] + 11} textAnchor="start" fontSize="9" fill="#666">
               {s.sub}
             </text>
-            <circle cx={AVX} cy={AVY[i]} r={AVR}
+            <circle cx={CRX} cy={CRY[i]} r={CRR}
               fill={s.color} fillOpacity="0.14"
               stroke={s.color} strokeWidth="1.5" strokeOpacity="0.65"/>
-            <text x={AVX} y={AVY[i] + 5} textAnchor="middle" fontSize="14" fill={s.color}>
+            <text x={CRX} y={CRY[i] + 5} textAnchor="middle" fontSize="14" fill={s.color}>
               {s.icon}
             </text>
-            <circle cx={AVX - AVR + 5} cy={AVY[i] - AVR + 5} r="3.5"
-              fill={s.color} filter="url(#nnv-glow-sm)">
+            <circle cx={CRX - CRR + 5} cy={CRY[i] - CRR + 5} r="3.5" fill={s.color} filter="url(#nnv-glow-sm)">
               {/* @ts-ignore */}
-              <animate attributeName="opacity" values="1;0.2;1" dur={`${2.2 + i * 0.35}s`} repeatCount="indefinite"/>
+              <animate attributeName="opacity" values="1;0.2;1" dur={`${2.0 + i * 0.3}s`} repeatCount="indefinite"/>
             </circle>
           </g>
         ))}
@@ -1750,17 +1816,19 @@ function NeuralNetViz({
       {/* Legend */}
       <div className="px-6 py-4 flex flex-wrap items-center justify-center gap-4"
         style={{ borderTop: "1px solid rgba(0,0,0,0.06)" }}>
-        {[
-          { color: "#f87171", label: "Brain Config — always injected",                     dim: false },
-          { color: "#a78bfa", label: "Knowledge Base — if similarity ≥ threshold",         dim: false },
-          { color: "#34d399", label: "HealthKit — from device or inline data",             dim: false },
-          { color: "#2dd4bf", label: "Wearables — Oura Ring · Whoop (planned)",             dim: true  },
-          { color: "#38bdf8", label: "Session Memory — last summary (feedback loop)",      dim: false },
-          { color: "#f59e0b", label: "Claude Training — always available",                 dim: false },
-          { color: "#f97316", label: "Hedra — avatar generation",                          dim: false },
-          { color: "#22d3ee", label: "ElevenLabs — voice cloning · TTS",                   dim: false },
-          { color: "#a3e635", label: "LiveKit — WebRTC real-time delivery",                dim: false },
-        ].map(item => (
+        {([
+          { color: "#f87171", label: "Brain Config — always injected",            dim: false },
+          { color: "#a78bfa", label: "Knowledge Base — if similarity ≥ threshold",dim: false },
+          { color: "#34d399", label: "HealthKit — live biometric data",           dim: false },
+          { color: "#2dd4bf", label: "Wearables — Oura · Whoop (planned)",        dim: true  },
+          { color: "#38bdf8", label: "Session Memory — feedback loop",            dim: false },
+          { color: "#f59e0b", label: "Claude Training — always available",        dim: false },
+          { color: "#e879f9", label: "Fal.AI — body avatar generation",           dim: false },
+          { color: "#fb923c", label: "Stability AI — face portrait stylize",      dim: false },
+          { color: "#22d3ee", label: "ElevenLabs — voice clone · TTS",            dim: false },
+          { color: "#f97316", label: "Hedra — talking head assembly",             dim: false },
+          { color: "#a3e635", label: "LiveKit — WebRTC delivery",                 dim: false },
+        ] as { color: string; label: string; dim: boolean }[]).map(item => (
           <div key={item.label} className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full flex-shrink-0"
               style={{ background: item.color, opacity: item.dim ? 0.45 : 1 }}/>

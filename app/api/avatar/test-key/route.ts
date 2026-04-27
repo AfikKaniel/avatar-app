@@ -33,8 +33,10 @@ export async function GET(req: NextRequest) {
       const key = resolve(r.hedra_key, "HEDRA_API_KEY");
       if (!key) return NextResponse.json({ ok: false, error: "No key set" });
       const t0 = Date.now();
-      const resp = await fetch("https://mercury.dev.dream-ai.com/api/v1/characters", {
-        headers: { "X-API-Key": key },
+      // POST with no body — valid key returns 400 (missing fields), invalid key returns 401/403
+      const resp = await fetch("https://api.hedra.com/public/livekit/v1/session", {
+        method: "POST",
+        headers: { "x-api-key": key },
       });
       const latencyMs = Date.now() - t0;
       if (resp.status === 401 || resp.status === 403)

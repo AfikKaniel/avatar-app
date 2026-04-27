@@ -122,6 +122,30 @@ export async function ensureSchema() {
   `;
 }
 
+export async function getAvatarSecrets() {
+  try {
+    await ensureSchema();
+    const rows = await sql`SELECT * FROM avatar_secrets WHERE id = 1`;
+    const r = rows.rows[0];
+    return {
+      elevenlabsKey: r?.elevenlabs_key ?? null,
+      stabilityKey:  r?.stability_key  ?? null,
+      falKey:        r?.fal_key        ?? null,
+      livekitKey:    r?.livekit_key    ?? null,
+      livekitSecret: r?.livekit_secret ?? null,
+      livekitUrl:    r?.livekit_url    ?? null,
+      hedraKey:      r?.hedra_key      ?? null,
+      hedraSecret:   r?.hedra_secret   ?? null,
+    };
+  } catch {
+    return {
+      elevenlabsKey: null, stabilityKey: null, falKey: null,
+      livekitKey: null, livekitSecret: null, livekitUrl: null,
+      hedraKey: null, hedraSecret: null,
+    };
+  }
+}
+
 export async function logSession(data: {
   mode: string;
   language: string;

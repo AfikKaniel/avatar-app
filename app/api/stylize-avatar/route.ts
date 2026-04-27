@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAvatarSecrets } from "@/lib/db";
 
 export const maxDuration = 60;
 
@@ -15,7 +16,8 @@ export const maxDuration = 60;
  * sd3-turbo does NOT support image-to-image mode.
  */
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.STABILITY_API_KEY;
+  const { stabilityKey } = await getAvatarSecrets();
+  const apiKey = stabilityKey ?? process.env.STABILITY_API_KEY ?? "";
 
   const incoming = await req.formData();
   const photo = incoming.get("photo") as File | null;

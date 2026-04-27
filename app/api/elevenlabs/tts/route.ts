@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getAvatarSecrets } from "@/lib/db";
 
 /**
  * POST /api/elevenlabs/tts
@@ -9,7 +10,8 @@ import { NextRequest, NextResponse } from "next/server";
  * Body: { voiceId: string, text: string }
  */
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.ELEVENLABS_API_KEY;
+  const { elevenlabsKey } = await getAvatarSecrets();
+  const apiKey = elevenlabsKey ?? process.env.ELEVENLABS_API_KEY ?? "";
   if (!apiKey) {
     return NextResponse.json({ error: "ELEVENLABS_API_KEY not set" }, { status: 500 });
   }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { put } from "@vercel/blob";
+import { getAvatarSecrets } from "@/lib/db";
 
 // Vercel Hobby plan silently caps at 60s regardless of this value.
 // We use fal.ai's async queue + polling to stay well within that limit.
@@ -20,7 +21,8 @@ export const maxDuration = 60;
  */
 
 export async function POST(req: NextRequest) {
-  const falKey = process.env.FAL_KEY?.trim();
+  const { falKey: dbFalKey } = await getAvatarSecrets();
+  const falKey = (dbFalKey ?? process.env.FAL_KEY ?? "").trim();
 
   const form = await req.formData();
   const selfieFile = form.get("selfie") as File | null;

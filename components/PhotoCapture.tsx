@@ -21,7 +21,6 @@ export default function PhotoCapture({ onCapture }: Props) {
     onCapture(file);
   }
 
-  // Start the webcam
   async function startCamera() {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: "user", width: 640, height: 480 },
@@ -32,7 +31,6 @@ export default function PhotoCapture({ onCapture }: Props) {
     }
   }
 
-  // Capture a frame from the video
   const capture = useCallback(() => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -51,7 +49,6 @@ export default function PhotoCapture({ onCapture }: Props) {
       (blob) => {
         if (!blob) return;
         setPreview(canvas.toDataURL("image/jpeg"));
-        // Stop camera stream
         (video.srcObject as MediaStream)?.getTracks().forEach((t) => t.stop());
         setStreaming(false);
         onCapture(blob);
@@ -71,7 +68,7 @@ export default function PhotoCapture({ onCapture }: Props) {
     <div className="space-y-3">
       {/* Live camera feed */}
       {!preview && (
-        <div className="relative w-full aspect-video bg-gray-900 rounded-xl overflow-hidden">
+        <div className="relative w-full aspect-video bg-gray-100 rounded-xl overflow-hidden border border-gray-200">
           <video
             ref={videoRef}
             autoPlay
@@ -84,7 +81,7 @@ export default function PhotoCapture({ onCapture }: Props) {
             <div className="absolute inset-0 flex items-center justify-center">
               <button
                 onClick={startCamera}
-                className="bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-2 px-6 rounded-lg transition"
+                className="bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-semibold py-2 px-6 rounded-lg transition cursor-pointer shadow-sm"
               >
                 Enable Camera
               </button>
@@ -95,7 +92,7 @@ export default function PhotoCapture({ onCapture }: Props) {
 
       {/* Photo preview */}
       {preview && (
-        <div className="relative w-full aspect-video bg-gray-900 rounded-xl overflow-hidden">
+        <div className="relative w-full aspect-video bg-gray-100 rounded-xl overflow-hidden border border-gray-200">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={preview} alt="Your photo" className="w-full h-full object-cover" />
         </div>
@@ -113,7 +110,7 @@ export default function PhotoCapture({ onCapture }: Props) {
       {streaming && !preview && (
         <button
           onClick={capture}
-          className="w-full bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 rounded-xl transition"
+          className="w-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-semibold py-3 rounded-xl transition cursor-pointer shadow-sm"
         >
           Take Photo
         </button>
@@ -122,7 +119,7 @@ export default function PhotoCapture({ onCapture }: Props) {
       {!preview && (
         <button
           onClick={() => fileInputRef.current?.click()}
-          className="w-full border border-gray-600 hover:border-gray-400 text-gray-300 font-semibold py-3 rounded-xl transition text-sm"
+          className="w-full border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm text-gray-600 font-semibold py-3 rounded-xl transition cursor-pointer text-sm"
         >
           Upload Photo Instead
         </button>
@@ -131,7 +128,7 @@ export default function PhotoCapture({ onCapture }: Props) {
       {preview && (
         <button
           onClick={retake}
-          className="w-full border border-gray-600 hover:border-gray-400 text-gray-300 font-semibold py-2 rounded-xl transition text-sm"
+          className="w-full border border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm text-gray-600 font-semibold py-2 rounded-xl transition cursor-pointer text-sm"
         >
           Retake / Choose Different
         </button>

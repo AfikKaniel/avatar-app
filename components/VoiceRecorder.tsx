@@ -13,7 +13,7 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
   const chunksRef    = useRef<Blob[]>([]);
   const streamRef    = useRef<MediaStream | null>(null);
   const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
-  const discardRef   = useRef(false); // when true, onstop will NOT call onRecordingComplete
+  const discardRef   = useRef(false);
   const [state, setState]     = useState<State>("idle");
   const [seconds, setSeconds] = useState(0);
 
@@ -25,7 +25,7 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
   }
 
   async function startRecording() {
-    onRecordingComplete(null); // clear parent blob immediately
+    onRecordingComplete(null);
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
     chunksRef.current = [];
@@ -64,8 +64,6 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
 
   function stopRecording() {
     stopTimer();
-    // If < 60s: mark as discard so onstop won't call onRecordingComplete,
-    // and immediately clear parent's blob
     if (seconds < 60) {
       discardRef.current = true;
       onRecordingComplete(null);
@@ -84,19 +82,19 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
   return (
     <div className="space-y-2">
       <div className={`text-3xl font-mono font-bold text-center transition-colors ${
-        seconds >= 60 ? "text-green-400" : state === "paused" ? "text-yellow-400" : "text-gray-400"
+        seconds >= 60 ? "text-emerald-500" : state === "paused" ? "text-amber-500" : "text-gray-400"
       }`}>
         {formatTime(seconds)}
-        {state === "paused" && <span className="text-xs font-sans ml-2 text-yellow-400">paused</span>}
+        {state === "paused" && <span className="text-xs font-sans ml-2 text-amber-500">paused</span>}
       </div>
 
       {isActive && seconds < 60 && (
-        <p className="text-xs text-yellow-500 text-center">
+        <p className="text-xs text-amber-600 text-center font-medium">
           Keep going — {60 - seconds}s more for a good clone
         </p>
       )}
       {isActive && seconds >= 60 && (
-        <p className="text-xs text-green-500 text-center">
+        <p className="text-xs text-emerald-600 text-center font-medium">
           Great! Stop when ready, or keep going for better quality.
         </p>
       )}
@@ -104,7 +102,7 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
       {state === "idle" && (
         <button
           onClick={startRecording}
-          className="w-full bg-red-600 hover:bg-red-500 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2"
+          className="w-full bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-semibold py-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-sm"
         >
           <span className="w-3 h-3 rounded-full bg-white animate-pulse" />
           Start Recording
@@ -115,13 +113,13 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
         <div className="flex gap-2">
           <button
             onClick={pauseRecording}
-            className="flex-1 border border-yellow-500 text-yellow-400 hover:bg-yellow-900/20 font-semibold py-3 rounded-xl transition"
+            className="flex-1 border border-amber-300 text-amber-600 bg-amber-50 hover:bg-amber-100 font-semibold py-3 rounded-xl transition cursor-pointer"
           >
             Pause
           </button>
           <button
             onClick={stopRecording}
-            className="flex-1 border border-red-600 text-red-400 hover:bg-red-900/20 font-semibold py-3 rounded-xl transition"
+            className="flex-1 border border-rose-300 text-rose-500 bg-rose-50 hover:bg-rose-100 font-semibold py-3 rounded-xl transition cursor-pointer"
           >
             Stop
           </button>
@@ -132,14 +130,14 @@ export default function VoiceRecorder({ onRecordingComplete }: Props) {
         <div className="flex gap-2">
           <button
             onClick={resumeRecording}
-            className="flex-1 bg-red-600 hover:bg-red-500 text-white font-semibold py-3 rounded-xl transition flex items-center justify-center gap-2"
+            className="flex-1 bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-semibold py-3 rounded-xl transition cursor-pointer flex items-center justify-center gap-2 shadow-sm"
           >
             <span className="w-3 h-3 rounded-full bg-white animate-pulse" />
             Resume
           </button>
           <button
             onClick={stopRecording}
-            className="flex-1 border border-gray-600 text-gray-400 hover:bg-gray-800 font-semibold py-3 rounded-xl transition"
+            className="flex-1 border border-gray-200 text-gray-500 bg-white hover:bg-gray-50 font-semibold py-3 rounded-xl transition cursor-pointer"
           >
             Stop
           </button>

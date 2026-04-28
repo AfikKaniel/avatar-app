@@ -35,8 +35,8 @@ function ConnectingLoader({ messages, mode }: { messages: string[]; mode: Mode }
   return (
     <div className="flex flex-col items-center justify-center gap-6 w-full h-full py-12">
       <span className="text-5xl select-none">{icon}</span>
-      <div className="w-12 h-12 border-[3px] border-[#6C63FF] border-t-transparent rounded-full animate-spin" />
-      <p key={idx} className="text-white font-black text-xl tracking-tight text-center px-8 max-w-xs leading-snug">
+      <div className="w-12 h-12 border-[3px] border-[#8B5CF6] border-t-transparent rounded-full animate-spin" />
+      <p key={idx} className="text-gray-700 font-bold text-xl tracking-tight text-center px-8 max-w-xs leading-snug">
         {messages[idx]}
       </p>
     </div>
@@ -258,8 +258,8 @@ function ChatPageInner() {
     return (
       <main className="flex flex-col items-center justify-center min-h-screen px-4 gap-8" style={{ marginTop: "-8vh" }}>
         <div className="text-center space-y-2">
-          <h1 className="text-2xl font-bold text-white">Choose Your Language</h1>
-          <p className="text-gray-400 text-sm">
+          <h1 className="text-2xl font-bold text-gray-900">Choose Your Language</h1>
+          <p className="text-gray-500 text-sm">
             The conversation will be in the language you select.
           </p>
         </div>
@@ -272,10 +272,10 @@ function ChatPageInner() {
                 setLanguage(lang.code);
                 startSession(lang.code);
               }}
-              className="flex flex-col items-center gap-3 w-40 py-6 rounded-2xl border border-gray-600 bg-white/5 active:bg-white/10 transition"
+              className="flex flex-col items-center gap-3 w-40 py-6 rounded-2xl border border-gray-200 bg-white shadow-sm hover:border-[#8B5CF6]/50 hover:shadow-md active:scale-95 transition-all cursor-pointer"
             >
               <span className="text-5xl">{lang.flag}</span>
-              <span className="text-white font-semibold text-sm">
+              <span className="text-gray-700 font-semibold text-sm">
                 {lang.native}
               </span>
             </button>
@@ -284,7 +284,7 @@ function ChatPageInner() {
 
         <button
           onClick={() => router.push("/")}
-          className="text-gray-500 hover:text-gray-300 text-sm transition"
+          className="text-gray-400 hover:text-gray-600 text-sm transition cursor-pointer"
         >
           ← Back
         </button>
@@ -297,7 +297,7 @@ function ChatPageInner() {
     <main className="flex flex-col h-screen max-w-2xl mx-auto px-4 py-4 gap-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h1 className="text-xl font-bold">{label}</h1>
+          <h1 className="text-xl font-bold text-gray-900">{label}</h1>
           {language && (
             <span className="text-lg" title={LANGUAGES.find(l => l.code === language)?.label}>
               {LANGUAGES.find(l => l.code === language)?.flag}
@@ -307,7 +307,7 @@ function ChatPageInner() {
         {state === "ready" && videoReady && (
           <button
             onClick={endSession}
-            className="text-sm text-gray-400 hover:text-gray-200 transition"
+            className="text-sm text-gray-400 hover:text-gray-600 transition cursor-pointer"
           >
             ← Return to Lobby
           </button>
@@ -315,7 +315,7 @@ function ChatPageInner() {
       </div>
 
       <div
-        className="relative bg-gray-900 rounded-2xl overflow-hidden flex-1 flex items-center justify-center"
+        className="relative bg-gray-100 rounded-2xl overflow-hidden flex-1 flex items-center justify-center"
         style={{ maxHeight: "75vh" }}
       >
         <video
@@ -332,10 +332,10 @@ function ChatPageInner() {
 
         {state === "error" && (
           <div className="flex flex-col items-center gap-2 p-4 text-center">
-            <p className="text-red-400 font-semibold">{errorMsg}</p>
+            <p className="text-red-500 font-semibold">{errorMsg}</p>
             <button
               onClick={() => router.push("/")}
-              className="text-[#6C63FF] underline text-sm"
+              className="text-[#8B5CF6] underline text-sm cursor-pointer"
             >
               Go back home
             </button>
@@ -343,13 +343,13 @@ function ChatPageInner() {
         )}
 
         {state === "ready" && videoReady && (
-          <div className="absolute bottom-3 left-3 flex items-center gap-2 bg-black/60 rounded-full px-3 py-1">
+          <div className="absolute bottom-3 left-3 flex items-center gap-2 bg-gray-900/70 backdrop-blur-sm rounded-full px-3 py-1.5">
             <span
               className={`w-2 h-2 rounded-full ${
-                micOn ? "bg-green-400 animate-pulse" : "bg-red-500"
+                micOn ? "bg-emerald-400 animate-pulse" : "bg-rose-400"
               }`}
             />
-            <span className="text-xs text-white">
+            <span className="text-xs text-white font-medium">
               {micOn ? "Mic on — speak freely" : "Mic off"}
             </span>
           </div>
@@ -360,17 +360,17 @@ function ChatPageInner() {
         <div className="flex justify-center gap-3">
           <button
             onClick={toggleMic}
-            className={`px-6 py-2 rounded-xl border font-medium text-sm transition ${
+            className={`px-6 py-2.5 rounded-xl border font-medium text-sm transition cursor-pointer ${
               micOn
-                ? "border-gray-600 text-gray-300 hover:border-gray-400"
-                : "border-red-500 text-red-400 hover:border-red-400"
+                ? "border-gray-200 text-gray-600 bg-white hover:border-gray-300 hover:shadow-sm"
+                : "border-rose-300 text-rose-500 bg-rose-50 hover:border-rose-400"
             }`}
           >
             {micOn ? "Mute" : "Unmute"}
           </button>
           <button
             onClick={endSession}
-            className="px-6 py-2 rounded-xl border border-red-600 text-red-400 hover:border-red-400 font-medium text-sm transition"
+            className="px-6 py-2.5 rounded-xl bg-rose-500 text-white hover:bg-rose-600 font-medium text-sm transition cursor-pointer shadow-sm"
           >
             End Session
           </button>

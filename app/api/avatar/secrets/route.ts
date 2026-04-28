@@ -27,7 +27,6 @@ export async function GET() {
     hedraKey:      mask(envOr(r?.hedra_key,      "HEDRA_API_KEY")),
     hedraSecret:   mask(envOr(r?.hedra_secret,   "HEDRA_API_SECRETS")),
     stabilityKey:  mask(envOr(r?.stability_key,  "STABILITY_API_KEY")),
-    falKey:        mask(envOr(r?.fal_key,         "FAL_KEY")),
     elevenlabsKey: mask(envOr(r?.elevenlabs_key, "ELEVENLABS_API_KEY")),
     livekitKey:    mask(envOr(r?.livekit_key,    "LIVEKIT_API_KEY")),
     livekitSecret: mask(envOr(r?.livekit_secret, "LIVEKIT_API_SECRET")),
@@ -36,7 +35,6 @@ export async function GET() {
     hedraSet:      isSet(r?.hedra_key,      "HEDRA_API_KEY"),
     hedraSecretSet:isSet(r?.hedra_secret,   "HEDRA_API_SECRETS"),
     stabilitySet:  isSet(r?.stability_key,  "STABILITY_API_KEY"),
-    falSet:        isSet(r?.fal_key,         "FAL_KEY"),
     elevenlabsSet: isSet(r?.elevenlabs_key, "ELEVENLABS_API_KEY"),
     livekitSet:    isSet(r?.livekit_key,    "LIVEKIT_API_KEY") &&
                    isSet(r?.livekit_secret, "LIVEKIT_API_SECRET") &&

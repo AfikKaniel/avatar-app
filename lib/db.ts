@@ -130,7 +130,6 @@ export async function getAvatarSecrets() {
     return {
       elevenlabsKey: r?.elevenlabs_key ?? null,
       stabilityKey:  r?.stability_key  ?? null,
-      falKey:        r?.fal_key        ?? null,
       livekitKey:    r?.livekit_key    ?? null,
       livekitSecret: r?.livekit_secret ?? null,
       livekitUrl:    r?.livekit_url    ?? null,
@@ -139,7 +138,7 @@ export async function getAvatarSecrets() {
     };
   } catch {
     return {
-      elevenlabsKey: null, stabilityKey: null, falKey: null,
+      elevenlabsKey: null, stabilityKey: null,
       livekitKey: null, livekitSecret: null, livekitUrl: null,
       hedraKey: null, hedraSecret: null,
     };

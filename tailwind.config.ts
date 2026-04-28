@@ -8,7 +8,14 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        brand: "#6C63FF",
+        brand: "#8B5CF6",
+        "brand-hover": "#7C3AED",
+        cta: "#10B981",
+        "cta-hover": "#059669",
+      },
+      fontFamily: {
+        heading: ["var(--font-lora)", "Georgia", "serif"],
+        body: ["var(--font-raleway)", "system-ui", "sans-serif"],
       },
     },
   },

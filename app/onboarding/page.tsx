@@ -14,7 +14,6 @@ export default function OnboardingPage() {
   const [step, setStep]           = useState<Step>("photo");
   const [photoBlob, setPhotoBlob] = useState<Blob | null>(null);
   const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
-  // VoiceRecorder passes null when recording resets, clearing the "Create My Avatar" button
   const [status, setStatus]       = useState("");
   const [error, setError]         = useState("");
 
@@ -40,7 +39,7 @@ export default function OnboardingPage() {
       if (!voiceRes.ok) throw new Error("Voice cloning failed");
       const { voiceId } = await voiceRes.json();
 
-      // ── 2. Save photo + voice_id to backend (for the Hedra agent) ───────
+      // ── 2. Save photo + voice_id to backend ─────────────────────────────
       setStatus("Setting up your avatar…");
       const saveForm = new FormData();
       saveForm.append("photo",   photoBlob, "photo.jpg");
@@ -66,7 +65,7 @@ export default function OnboardingPage() {
 
   return (
     <main className="flex flex-col items-center min-h-screen px-4 pt-8 pb-4 gap-4">
-      {/* Progress indicators — 3 visible steps: Photo/Style · Voice · Done */}
+      {/* Progress indicators */}
       <div className="flex gap-2 items-center">
         {([
           { key: "photo",      label: "1" },
@@ -85,15 +84,15 @@ export default function OnboardingPage() {
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
                   active
-                    ? "bg-[#6C63FF] text-white"
+                    ? "bg-[#8B5CF6] text-white shadow-sm"
                     : done
-                    ? "bg-green-600 text-white"
-                    : "bg-gray-700 text-gray-400"
+                    ? "bg-emerald-500 text-white"
+                    : "bg-gray-100 text-gray-400"
                 }`}
               >
-                {label}
+                {done ? "✓" : label}
               </div>
-              {i < 2 && <div className="w-8 h-px bg-gray-600" />}
+              {i < 2 && <div className="w-8 h-px bg-gray-200" />}
             </div>
           );
         })}
@@ -102,8 +101,8 @@ export default function OnboardingPage() {
       {/* ── Step 1: Photo ── */}
       {step === "photo" && (
         <div className="w-full max-w-md space-y-4 text-center">
-          <h2 className="text-2xl font-bold">Your Avatar Face</h2>
-          <p className="text-gray-400 text-sm">
+          <h2 className="text-2xl font-bold text-gray-900">Your Avatar Face</h2>
+          <p className="text-gray-500 text-sm">
             Take a picture or upload one so your avatar looks exactly like you!
             Make sure your face is clearly visible with good lighting.
           </p>
@@ -114,9 +113,9 @@ export default function OnboardingPage() {
       {/* ── Step 1b: Stylize ── */}
       {step === "stylize" && photoBlob && (
         <div className="w-full max-w-md space-y-4 text-center">
-          <h2 className="text-2xl font-bold">Your Avatar Style</h2>
-          <p className="text-gray-400 text-sm">
-            We're giving your avatar those iconic digital eyes and a vivid, animated look.
+          <h2 className="text-2xl font-bold text-gray-900">Your Avatar Style</h2>
+          <p className="text-gray-500 text-sm">
+            We&apos;re giving your avatar those iconic digital eyes and a vivid, animated look.
           </p>
           <AvatarStyler
             originalBlob={photoBlob}
@@ -135,14 +134,14 @@ export default function OnboardingPage() {
       {/* ── Step 2: Voice ── */}
       {step === "voice" && (
         <div className="w-full max-w-md space-y-4 text-center">
-          <h2 className="text-2xl font-bold">Teach Your Avatar Your Voice</h2>
-          <p className="text-gray-400 text-sm">
+          <h2 className="text-2xl font-bold text-gray-900">Teach Your Avatar Your Voice</h2>
+          <p className="text-gray-500 text-sm">
             Your avatar wants to sound exactly like you! Speak freely for{" "}
-            <span className="text-[#6C63FF] font-semibold">60 seconds</span>{" "}
+            <span className="text-[#8B5CF6] font-semibold">60 seconds</span>{" "}
             so it can learn your voice. Here are some topics to talk about —
             pick any that feel natural:
           </p>
-          <div className="bg-gray-800 rounded-xl p-4 text-left text-sm text-gray-300 space-y-2">
+          <div className="bg-white border border-gray-200 rounded-xl p-4 text-left text-sm text-gray-600 space-y-2 shadow-sm">
             {[
               "My name, where I'm from, and a little about my life",
               "My hobbies and what I love to do in my free time",
@@ -156,7 +155,7 @@ export default function OnboardingPage() {
               "Something most people don't know about me",
             ].map((topic, i) => (
               <div key={i} className="flex items-start gap-2">
-                <span className="text-[#6C63FF] font-bold mt-0.5">·</span>
+                <span className="text-[#8B5CF6] font-bold mt-0.5">·</span>
                 <span>{topic}</span>
               </div>
             ))}
@@ -165,12 +164,12 @@ export default function OnboardingPage() {
           {voiceBlob && (
             <button
               onClick={handleSubmit}
-              className="w-full bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 rounded-xl transition"
+              className="w-full bg-[#10B981] hover:bg-[#059669] text-white font-semibold py-3 rounded-xl transition cursor-pointer shadow-sm hover:shadow-md"
             >
               Create My Avatar
             </button>
           )}
-          {error && <p className="text-red-400 text-sm">{error}</p>}
+          {error && <p className="text-red-500 text-sm">{error}</p>}
         </div>
       )}
 
@@ -178,12 +177,12 @@ export default function OnboardingPage() {
       {step === "processing" && (
         <div className="text-center space-y-5 max-w-xs mx-auto">
           <div className="text-5xl animate-bounce">🧬</div>
-          <div className="w-12 h-12 border-4 border-[#6C63FF] border-t-transparent rounded-full animate-spin mx-auto" />
-          <h2 className="text-xl font-semibold text-white">{status}</h2>
-          <p className="text-gray-400 text-sm leading-relaxed">
-            {status.includes("voice") && "Teaching your avatar to speak exactly like you… 🎙️"}
-            {status.includes("avatar") && "Convincing your digital twin to show up… 🤖"}
-            {!status.includes("voice") && !status.includes("avatar") && "Uploading your personality to the cloud… ☁️"}
+          <div className="w-12 h-12 border-4 border-[#8B5CF6] border-t-transparent rounded-full animate-spin mx-auto" />
+          <h2 className="text-xl font-semibold text-gray-800">{status}</h2>
+          <p className="text-gray-500 text-sm leading-relaxed">
+            {status.includes("voice") && "Teaching your avatar to speak exactly like you…"}
+            {status.includes("avatar") && "Convincing your digital twin to show up…"}
+            {!status.includes("voice") && !status.includes("avatar") && "Uploading your personality to the cloud…"}
           </p>
         </div>
       )}
@@ -192,13 +191,13 @@ export default function OnboardingPage() {
       {step === "done" && (
         <div className="text-center space-y-6">
           <div className="text-6xl">🎉</div>
-          <h2 className="text-2xl font-bold">Your Avatar is Ready!</h2>
-          <p className="text-gray-400">
+          <h2 className="text-2xl font-bold text-gray-900">Your Avatar is Ready!</h2>
+          <p className="text-gray-500">
             Your avatar has your face and your voice. Go say hello.
           </p>
           <button
             onClick={() => router.push("/chat?mode=digital_twin")}
-            className="bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 px-10 rounded-xl transition"
+            className="bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-semibold py-3 px-10 rounded-xl transition cursor-pointer shadow-sm hover:shadow-md"
           >
             Meet My Avatar →
           </button>

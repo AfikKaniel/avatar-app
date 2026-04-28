@@ -35,17 +35,6 @@ except Exception as _vad_err:
 
 # ── Image helpers ──────────────────────────────────────────────────────────────
 
-def crop_face_portrait(img: Image.Image) -> Image.Image:
-    """
-    Crop the top 35% of a full-body image to get a usable face portrait for Hedra.
-    Hedra works best with a 512×512 face portrait, not a full-body shot.
-    """
-    w, h = img.size
-    face_h = int(h * 0.35)
-    face = img.crop((0, 0, w, face_h))
-    return face.resize((512, 512), Image.LANCZOS)
-
-
 def download_image(url: str, timeout: int = 15) -> Image.Image | None:
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "GagingAI/1.0"})
@@ -117,28 +106,30 @@ async def entrypoint(ctx: JobContext):
     logger.info(f"Agent connected to room: {ctx.room.name}")
 
     # ── 1. Read session config from room metadata (set at creation, always ready) ──
-    voice_id     = None
-    photo_url    = None
-    mode         = "digital_twin"
-    language     = "en"
-    memory       = ""
-    goal         = ""
-    goal_target  = ""
-    goal_current = ""
-    is_checkin   = False
+    voice_id      = None
+    photo_url     = None
+    mode          = "digital_twin"
+    language      = "en"
+    memory        = ""
+    goal          = ""
+    goal_target   = ""
+    goal_current  = ""
+    is_checkin    = False
+    system_prompt = ""
 
     def apply_meta(meta: dict):
         nonlocal voice_id, photo_url, mode, language, memory
-        nonlocal goal, goal_target, goal_current, is_checkin
-        mode         = meta.get("mode", "digital_twin")
-        voice_id     = meta.get("voice_id")
-        photo_url    = meta.get("photo_url")
-        language     = meta.get("language", "en")
-        memory       = meta.get("memory", "")
-        goal         = meta.get("goal", "")
-        goal_target  = meta.get("goal_target", "")
-        goal_current = meta.get("goal_current", "")
-        is_checkin   = meta.get("is_checkin", "0") == "1"
+        nonlocal goal, goal_target, goal_current, is_checkin, system_prompt
+        mode          = meta.get("mode", "digital_twin")
+        voice_id      = meta.get("voice_id")
+        photo_url     = meta.get("photo_url")
+        language      = meta.get("language", "en")
+        memory        = meta.get("memory", "")
+        goal          = meta.get("goal", "")
+        goal_target   = meta.get("goal_target", "")
+        goal_current  = meta.get("goal_current", "")
+        is_checkin    = meta.get("is_checkin", "0") == "1"
+        system_prompt = meta.get("system_prompt") or ""
 
     room_raw = ctx.room.metadata
     if room_raw:
@@ -178,12 +169,12 @@ async def entrypoint(ctx: JobContext):
     if mode == "therapist":
         await run_therapist_session(
             ctx, ios_user, language, memory,
-            goal, goal_target, goal_current, is_checkin
+            goal, goal_target, goal_current, is_checkin, system_prompt
         )
     else:
         await run_digital_twin_session(
             ctx, ios_user, voice_id, photo_url, language, memory,
-            goal, goal_target, goal_current, is_checkin
+            goal, goal_target, goal_current, is_checkin, system_prompt
         )
 
 
@@ -282,6 +273,7 @@ async def run_digital_twin_session(
     goal_target: str = "",
     goal_current: str = "",
     is_checkin: bool = False,
+    system_prompt: str = "",
 ):
     lang_name = LANGUAGE_NAMES.get(language, "English")
     logger.info(f"Digital twin session — voice_id={voice_id}, lang={language}, goal={goal}")
@@ -291,8 +283,9 @@ async def run_digital_twin_session(
         return
 
     # ── Trim env vars to avoid whitespace/newline bugs (same root cause as FAL_KEY) ─
-    el_key  = (os.environ.get("ELEVENLABS_API_KEY") or "").strip()
-    oai_key = (os.environ.get("OPENAI_API_KEY")     or "").strip()
+    el_key       = (os.environ.get("ELEVENLABS_API_KEY") or "").strip()
+    oai_key      = (os.environ.get("OPENAI_API_KEY")     or "").strip()
+    anthropic_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
 
     if not el_key:
         logger.error("ELEVENLABS_API_KEY is empty — cannot produce TTS audio")
@@ -300,14 +293,17 @@ async def run_digital_twin_session(
     if not oai_key:
         logger.error("OPENAI_API_KEY is empty — cannot run STT")
         return
+    if not anthropic_key:
+        logger.error("ANTHROPIC_API_KEY is empty — cannot run Claude LLM")
+        return
 
-    logger.info(f"API keys OK — ElevenLabs={el_key[:6]}… OpenAI={oai_key[:6]}…")
+    logger.info(f"API keys OK — ElevenLabs={el_key[:6]}… OpenAI={oai_key[:6]}… Anthropic={anthropic_key[:6]}…")
 
-    # ── AgentSession (VAD → STT → LLM → TTS) ─────────────────────────────────
+    # ── AgentSession (VAD → STT → Claude LLM → TTS) ───────────────────────────
     session = AgentSession(
         vad=_VAD or silero.VAD.load(),
         stt=openai.STT(api_key=oai_key),
-        llm=openai.LLM(model="gpt-4o-mini", api_key=oai_key),
+        llm=anthropic.LLM(model="claude-haiku-4-5-20251001", api_key=anthropic_key),
         tts=elevenlabs.TTS(
             api_key=el_key,
             voice_id=voice_id,
@@ -330,10 +326,9 @@ async def run_digital_twin_session(
         logger.info(f"Hedra key prefix: {hedra_key[:8]}…  photo_url: {photo_url[:60]}…")
         avatar_img = download_image(photo_url)
         if avatar_img:
-            face = crop_face_portrait(avatar_img)
-            logger.info(f"Face portrait ready: {face.size} — posting to Hedra API…")
+            logger.info(f"Avatar image ready: {avatar_img.size} — posting to Hedra API…")
             try:
-                hedra_sess = hedra.AvatarSession(avatar_image=face, api_key=hedra_key)
+                hedra_sess = hedra.AvatarSession(avatar_image=avatar_img, api_key=hedra_key)
                 await hedra_sess.start(agent_session=session, room=ctx.room)
                 logger.info("Hedra API call succeeded — waiting up to 15s for hedra-avatar-agent to join room…")
 
@@ -382,10 +377,9 @@ async def run_digital_twin_session(
             f"photo_url={'set' if photo_url else 'MISSING'} — running direct audio"
         )
 
-    # ── Build system prompt ────────────────────────────────────────────────────
+    # ── Build instructions ─────────────────────────────────────────────────────
     coaching     = GOAL_COACHING.get(goal, {})
     goal_section = f"\n\n{coaching['twin_system']}" if coaching.get("twin_system") else ""
-    mem_section  = f"\n\nContext from previous sessions:\n{memory}" if memory else ""
     setup_section = ""
     if goal_target or goal_current:
         setup_section = "\n\nUser's goal setup (already collected — do NOT ask for this again):"
@@ -414,14 +408,27 @@ async def run_digital_twin_session(
     else:
         greeting = coaching.get("continue_twin_greeting", f"Welcome yourself back briefly and continue coaching. One or two sentences.")
 
-    instructions = (
-        f"You are the user's digital twin — a first-person AI version of themselves.\n"
-        f"Speak entirely in first person, as if you ARE the user.\n"
-        f"Keep every response to 2–3 sentences maximum. Be direct and energetic.\n"
-        f"Never break character. Never say you are an AI.\n"
-        f"IMPORTANT: Always respond in {lang_name}."
-        f"{goal_section}{setup_section}{mem_section}{checkin_note}"
-    )
+    # If the backend sent an enriched system prompt (brain config + health data + memory + RAG),
+    # use it as the base — it already contains persona, health context, and session memory.
+    # Otherwise fall back to the hardcoded default persona.
+    if system_prompt:
+        instructions = (
+            system_prompt
+            + f"\n\nIMPORTANT: Always respond in {lang_name}."
+            + goal_section
+            + setup_section
+            + checkin_note
+        )
+    else:
+        mem_section = f"\n\nContext from previous sessions:\n{memory}" if memory else ""
+        instructions = (
+            f"You are the user's digital twin — a first-person AI version of themselves.\n"
+            f"Speak entirely in first person, as if you ARE the user.\n"
+            f"Keep every response to 2–3 sentences maximum. Be direct and energetic.\n"
+            f"Never break character. Never say you are an AI.\n"
+            f"IMPORTANT: Always respond in {lang_name}."
+            + goal_section + setup_section + mem_section + checkin_note
+        )
 
     # ── Start session — on_enter() fires the greeting automatically ─────────
     try:
@@ -447,6 +454,7 @@ async def run_therapist_session(
     goal_target: str = "",
     goal_current: str = "",
     is_checkin: bool = False,
+    system_prompt: str = "",
 ):
     lang_name = LANGUAGE_NAMES.get(language, "English")
     logger.info(f"Therapist session — lang={language}, goal={goal}")
@@ -454,17 +462,21 @@ async def run_therapist_session(
     therapist_voice_id = os.environ.get("THERAPIST_VOICE_ID", DEFAULT_THERAPIST_VOICE_ID)
     avatar_image = load_therapist_image()
 
-    oai_key = (os.environ.get("OPENAI_API_KEY") or "").strip()
+    oai_key       = (os.environ.get("OPENAI_API_KEY")     or "").strip()
+    anthropic_key = (os.environ.get("ANTHROPIC_API_KEY") or "").strip()
     if not oai_key:
-        logger.error("OPENAI_API_KEY is empty — cannot run therapist session")
+        logger.error("OPENAI_API_KEY is empty — cannot run STT")
+        return
+    if not anthropic_key:
+        logger.error("ANTHROPIC_API_KEY is empty — cannot run Claude LLM")
         return
 
-    logger.info(f"Therapist API keys OK — OpenAI={oai_key[:6]}…")
+    logger.info(f"Therapist API keys OK — OpenAI={oai_key[:6]}… Anthropic={anthropic_key[:6]}…")
 
     session = AgentSession(
         vad=_VAD or silero.VAD.load(),
         stt=openai.STT(api_key=oai_key),
-        llm=openai.LLM(model="gpt-4o-mini", api_key=oai_key),
+        llm=anthropic.LLM(model="claude-haiku-4-5-20251001", api_key=anthropic_key),
         tts=openai.TTS(model="tts-1", voice="nova"),
         min_interruption_duration=2.0,
         min_interruption_words=2,
@@ -477,7 +489,6 @@ async def run_therapist_session(
 
     coaching      = GOAL_COACHING.get(goal, {})
     goal_section  = f"\n\n{coaching.get('therapist_system', '')}" if coaching.get("therapist_system") else ""
-    mem_section   = f"\n\nContext from previous sessions with this user:\n{memory}" if memory else ""
     setup_section = ""
     if goal_target or goal_current:
         setup_section = "\n\nUser's goal setup (already collected — do NOT ask again):"
@@ -506,14 +517,24 @@ async def run_therapist_session(
     else:
         greeting = coaching.get("continue_therapist_greeting", f"Welcome the user back warmly. Reference previous sessions and continue coaching. 1–2 sentences.")
 
-    instructions = (
-        f"You are a warm, professional coach and therapist.\n"
-        f"Listen with empathy, then push the user toward concrete action.\n"
-        f"Keep every response to 2–3 sentences. Be direct, warm, and action-focused.\n"
-        f"Never diagnose or give medical advice. If the user is in crisis, encourage them to contact emergency services.\n"
-        f"IMPORTANT: Always respond in {lang_name}."
-        f"{goal_section}{setup_section}{mem_section}{checkin_note}"
-    )
+    if system_prompt:
+        instructions = (
+            system_prompt
+            + f"\n\nIMPORTANT: Always respond in {lang_name}."
+            + goal_section
+            + setup_section
+            + checkin_note
+        )
+    else:
+        mem_section = f"\n\nContext from previous sessions with this user:\n{memory}" if memory else ""
+        instructions = (
+            f"You are a warm, professional coach and therapist.\n"
+            f"Listen with empathy, then push the user toward concrete action.\n"
+            f"Keep every response to 2–3 sentences. Be direct, warm, and action-focused.\n"
+            f"Never diagnose or give medical advice. If the user is in crisis, encourage them to contact emergency services.\n"
+            f"IMPORTANT: Always respond in {lang_name}."
+            + goal_section + setup_section + mem_section + checkin_note
+        )
 
     try:
         await session.start(

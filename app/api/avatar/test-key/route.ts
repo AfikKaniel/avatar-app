@@ -63,18 +63,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ ok, latencyMs });
     }
 
-    if (provider === "fal") {
-      const key = resolve(r.fal_key, "FAL_KEY");
-      if (!key) return NextResponse.json({ ok: false, error: "No key set" });
-      const t0 = Date.now();
-      const resp = await fetch("https://rest.alpha.fal.run/billing/credits", {
-        headers: { Authorization: `Key ${key}` },
-      });
-      const latencyMs = Date.now() - t0;
-      if (resp.status === 401 || resp.status === 403) return NextResponse.json({ ok: false, error: "Invalid API key" });
-      return NextResponse.json({ ok: true, latencyMs });
-    }
-
     if (provider === "livekit") {
       const apiKey    = resolve(r.livekit_key,    "LIVEKIT_API_KEY");
       const apiSecret = resolve(r.livekit_secret, "LIVEKIT_API_SECRET");

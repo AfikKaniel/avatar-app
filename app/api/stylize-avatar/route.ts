@@ -42,16 +42,18 @@ export async function POST(req: NextRequest) {
   body.append("image", photo);
   body.append(
     "prompt",
-    "close-up face portrait of the same person, exact facial identity preserved, " +
+    "waist-up portrait of the same person, exact facial identity preserved, " +
     "eyes open looking directly forward with calm confidence, " +
+    "relaxed natural presenter pose, arms gently at sides, hands partially visible, " +
     "smooth luminous bioluminescent skin with soft blue-white inner glow, " +
-    "gentle cyan and purple rim lighting, dark void background, " +
-    "stylized cinematic 3D CGI avatar render, head and shoulders only, 4k, sharp focus"
+    "gentle cyan and purple rim lighting, clean dark void background, " +
+    "stylized cinematic 3D CGI avatar render, stomach to head visible, 4k, sharp focus"
   );
   body.append(
     "negative_prompt",
     "different person, altered identity, sunglasses, closed eyes, " +
-    "full body, torso below chest, circuit patterns, HUD overlay, " +
+    "legs, feet, below waist, full body, " +
+    "circuit patterns, HUD overlay, " +
     "cartoon, anime, 2D illustration, watermark, text, blurry"
   );
   body.append("mode", "image-to-image");

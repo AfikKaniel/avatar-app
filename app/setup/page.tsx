@@ -127,7 +127,7 @@ export default function SetupPage() {
     if (mode === "therapist") {
       router.push("/chat?mode=therapist");
     } else if (hasAvatar) {
-      router.push("/chat?mode=digital_twin"); // keep existing avatar, skip re-onboarding
+      router.push("/chat?mode=digital_twin");
     } else {
       router.push("/onboarding");
     }
@@ -155,8 +155,8 @@ export default function SetupPage() {
       {step === "goal" && (
         <>
           <div className="space-y-3">
-            <h1 className="text-3xl font-black text-white">What's your goal?</h1>
-            <p className="text-gray-400 text-sm max-w-sm">
+            <h1 className="text-3xl font-black text-gray-900">What&apos;s your goal?</h1>
+            <p className="text-gray-500 text-sm max-w-sm">
               Choose the habit you want to build. Your AI companion will motivate
               and support you every session.
             </p>
@@ -169,21 +169,21 @@ export default function SetupPage() {
                 <button
                   key={goal.id}
                   onClick={() => setPendingGoal(goal.id)}
-                  className={`flex items-center gap-4 text-left w-full rounded-2xl border p-5 transition ${
+                  className={`flex items-center gap-4 text-left w-full rounded-2xl border p-5 transition cursor-pointer ${
                     isSelected
-                      ? "border-[#6C63FF] bg-[#6C63FF]/15 ring-1 ring-[#6C63FF]/50"
-                      : "border-gray-600 bg-white/3"
+                      ? "border-[#8B5CF6] bg-[#8B5CF6]/8 ring-1 ring-[#8B5CF6]/30 shadow-sm"
+                      : "border-gray-200 bg-white hover:border-gray-300 hover:shadow-sm"
                   }`}
                 >
                   <span className="text-4xl">{goal.icon}</span>
                   <div>
-                    <p className={`font-semibold transition ${isSelected ? "text-[#a09cf0]" : "text-white"}`}>
+                    <p className={`font-semibold transition ${isSelected ? "text-[#8B5CF6]" : "text-gray-800"}`}>
                       {goal.label}
                     </p>
-                    <p className="text-gray-400 text-xs mt-0.5">{goal.description}</p>
+                    <p className="text-gray-500 text-xs mt-0.5">{goal.description}</p>
                   </div>
                   {isSelected && (
-                    <span className="ml-auto text-[#6C63FF] text-lg">✓</span>
+                    <span className="ml-auto text-[#8B5CF6] text-lg font-bold">✓</span>
                   )}
                 </button>
               );
@@ -193,10 +193,10 @@ export default function SetupPage() {
           <button
             onClick={confirmGoal}
             disabled={!pendingGoal}
-            className={`w-full max-w-sm py-3 px-6 rounded-xl font-semibold text-white transition ${
+            className={`w-full max-w-sm py-3 px-6 rounded-xl font-semibold text-white transition cursor-pointer ${
               pendingGoal
-                ? "bg-[#6C63FF] hover:bg-[#5a52e0]"
-                : "bg-gray-700 text-gray-500 cursor-not-allowed"
+                ? "bg-[#8B5CF6] hover:bg-[#7C3AED] shadow-sm hover:shadow-md"
+                : "bg-gray-200 text-gray-400 cursor-not-allowed"
             }`}
           >
             Confirm
@@ -209,7 +209,7 @@ export default function SetupPage() {
         <>
           <div className="space-y-2 text-center">
             <div className="text-5xl">{goalInfo.icon}</div>
-            <h1 className="text-2xl font-black text-white">{questions.targetQ}</h1>
+            <h1 className="text-2xl font-black text-gray-900">{questions.targetQ}</h1>
           </div>
 
           <div className="flex flex-col gap-3 w-full max-w-sm">
@@ -217,15 +217,15 @@ export default function SetupPage() {
               <button
                 key={opt}
                 onClick={() => setGoalTarget(opt)}
-                className={`w-full text-left px-5 py-4 rounded-2xl border font-medium text-sm transition ${
+                className={`w-full text-left px-5 py-4 rounded-2xl border font-medium text-sm transition cursor-pointer ${
                   goalTarget === opt
-                    ? "border-[#6C63FF] bg-[#6C63FF]/15 text-[#a09cf0] ring-1 ring-[#6C63FF]/50"
-                    : "border-gray-600 bg-white/3 text-white"
+                    ? "border-[#8B5CF6] bg-[#8B5CF6]/8 text-[#8B5CF6] ring-1 ring-[#8B5CF6]/30 shadow-sm"
+                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:shadow-sm"
                 }`}
               >
                 <span className="flex items-center justify-between">
                   {opt}
-                  {goalTarget === opt && <span className="text-[#6C63FF]">✓</span>}
+                  {goalTarget === opt && <span className="text-[#8B5CF6] font-bold">✓</span>}
                 </span>
               </button>
             ))}
@@ -234,14 +234,14 @@ export default function SetupPage() {
           <button
             onClick={() => setStep("goal_current")}
             disabled={!goalTarget}
-            className={`w-full max-w-sm py-3 px-6 rounded-xl font-semibold text-white transition ${
-              goalTarget ? "bg-[#6C63FF] hover:bg-[#5a52e0]" : "bg-gray-700 text-gray-500 cursor-not-allowed"
+            className={`w-full max-w-sm py-3 px-6 rounded-xl font-semibold text-white transition cursor-pointer ${
+              goalTarget ? "bg-[#8B5CF6] hover:bg-[#7C3AED] shadow-sm hover:shadow-md" : "bg-gray-200 text-gray-400 cursor-not-allowed"
             }`}
           >
             Next →
           </button>
 
-          <button onClick={() => setStep("goal")} className="text-gray-500 text-sm">
+          <button onClick={() => setStep("goal")} className="text-gray-400 text-sm hover:text-gray-600 transition cursor-pointer">
             ← Back
           </button>
         </>
@@ -252,7 +252,7 @@ export default function SetupPage() {
         <>
           <div className="space-y-2 text-center">
             <div className="text-5xl">{goalInfo.icon}</div>
-            <h1 className="text-2xl font-black text-white">{questions.currentQ}</h1>
+            <h1 className="text-2xl font-black text-gray-900">{questions.currentQ}</h1>
           </div>
 
           <div className="flex flex-col gap-3 w-full max-w-sm">
@@ -260,15 +260,15 @@ export default function SetupPage() {
               <button
                 key={opt}
                 onClick={() => setGoalCurrent(opt)}
-                className={`w-full text-left px-5 py-4 rounded-2xl border font-medium text-sm transition ${
+                className={`w-full text-left px-5 py-4 rounded-2xl border font-medium text-sm transition cursor-pointer ${
                   goalCurrent === opt
-                    ? "border-[#6C63FF] bg-[#6C63FF]/15 text-[#a09cf0] ring-1 ring-[#6C63FF]/50"
-                    : "border-gray-600 bg-white/3 text-white"
+                    ? "border-[#8B5CF6] bg-[#8B5CF6]/8 text-[#8B5CF6] ring-1 ring-[#8B5CF6]/30 shadow-sm"
+                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:shadow-sm"
                 }`}
               >
                 <span className="flex items-center justify-between">
                   {opt}
-                  {goalCurrent === opt && <span className="text-[#6C63FF]">✓</span>}
+                  {goalCurrent === opt && <span className="text-[#8B5CF6] font-bold">✓</span>}
                 </span>
               </button>
             ))}
@@ -277,14 +277,14 @@ export default function SetupPage() {
           <button
             onClick={() => setStep("mode")}
             disabled={!goalCurrent}
-            className={`w-full max-w-sm py-3 px-6 rounded-xl font-semibold text-white transition ${
-              goalCurrent ? "bg-[#6C63FF] hover:bg-[#5a52e0]" : "bg-gray-700 text-gray-500 cursor-not-allowed"
+            className={`w-full max-w-sm py-3 px-6 rounded-xl font-semibold text-white transition cursor-pointer ${
+              goalCurrent ? "bg-[#8B5CF6] hover:bg-[#7C3AED] shadow-sm hover:shadow-md" : "bg-gray-200 text-gray-400 cursor-not-allowed"
             }`}
           >
             Next →
           </button>
 
-          <button onClick={() => setStep("goal_target")} className="text-gray-500 text-sm">
+          <button onClick={() => setStep("goal_target")} className="text-gray-400 text-sm hover:text-gray-600 transition cursor-pointer">
             ← Back
           </button>
         </>
@@ -297,10 +297,10 @@ export default function SetupPage() {
             <div className="text-4xl">
               {GOALS.find((g) => g.id === selectedGoal)?.icon}
             </div>
-            <h1 className="text-3xl font-black text-white">
+            <h1 className="text-3xl font-black text-gray-900">
               {GOALS.find((g) => g.id === selectedGoal)?.label}
             </h1>
-            <p className="text-gray-400 text-sm max-w-sm">
+            <p className="text-gray-500 text-sm max-w-sm">
               Who would you like to talk to?
             </p>
           </div>
@@ -308,26 +308,26 @@ export default function SetupPage() {
           <div className="flex flex-col sm:flex-row gap-4 w-full max-w-xl">
             <button
               onClick={() => handleModeSelect("digital_twin")}
-              className="flex-1 flex flex-col gap-3 text-left rounded-2xl border border-[#6C63FF]/40 bg-[#6C63FF]/5 active:bg-[#6C63FF]/15 p-6 transition"
+              className="flex-1 flex flex-col gap-3 text-left rounded-2xl border border-gray-200 bg-white hover:border-[#8B5CF6]/50 hover:shadow-md p-6 transition cursor-pointer shadow-sm"
             >
-              <h2 className="text-lg font-bold text-white">Talk to your Avatar</h2>
-              <p className="text-gray-400 text-sm">
+              <h2 className="text-lg font-bold text-gray-900">Talk to your Avatar</h2>
+              <p className="text-gray-500 text-sm">
                 Your face, your voice — an AI version of you.
               </p>
-              <span className="mt-auto text-[#6C63FF] text-sm font-semibold">
+              <span className="mt-auto text-[#8B5CF6] text-sm font-semibold">
                 Start now →
               </span>
             </button>
 
             <button
               onClick={() => handleModeSelect("therapist")}
-              className="flex-1 flex flex-col gap-3 text-left rounded-2xl border border-[#6C63FF]/40 bg-[#6C63FF]/5 active:bg-[#6C63FF]/15 p-6 transition"
+              className="flex-1 flex flex-col gap-3 text-left rounded-2xl border border-gray-200 bg-white hover:border-[#8B5CF6]/50 hover:shadow-md p-6 transition cursor-pointer shadow-sm"
             >
-              <h2 className="text-lg font-bold text-white">Talk to a Therapist</h2>
-              <p className="text-gray-400 text-sm">
+              <h2 className="text-lg font-bold text-gray-900">Talk to a Therapist</h2>
+              <p className="text-gray-500 text-sm">
                 A professional AI coach — no setup needed.
               </p>
-              <span className="mt-auto text-[#6C63FF] text-sm font-semibold">
+              <span className="mt-auto text-[#8B5CF6] text-sm font-semibold">
                 Start now →
               </span>
             </button>
@@ -335,7 +335,7 @@ export default function SetupPage() {
 
           <button
             onClick={() => setStep("goal_current")}
-            className="text-gray-500 text-sm transition"
+            className="text-gray-400 text-sm hover:text-gray-600 transition cursor-pointer"
           >
             ← Back
           </button>
@@ -347,8 +347,8 @@ export default function SetupPage() {
         <>
           <div className="space-y-3">
             <div className="text-4xl">🪞</div>
-            <h1 className="text-3xl font-black text-white">Your Avatar</h1>
-            <p className="text-gray-400 text-sm max-w-sm">
+            <h1 className="text-3xl font-black text-gray-900">Your Avatar</h1>
+            <p className="text-gray-500 text-sm max-w-sm">
               You already have an avatar. Keep it or create a new one?
             </p>
           </div>
@@ -356,13 +356,13 @@ export default function SetupPage() {
           <div className="flex flex-col gap-4 w-full max-w-sm">
             <button
               onClick={handleKeepAvatar}
-              className="w-full text-center bg-[#6C63FF] active:bg-[#5a52e0] text-white font-semibold py-3 px-6 rounded-xl transition"
+              className="w-full text-center bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-semibold py-3 px-6 rounded-xl transition cursor-pointer shadow-sm hover:shadow-md"
             >
               Keep My Avatar
             </button>
             <button
               onClick={handleNewAvatar}
-              className="w-full text-center border border-gray-600 text-gray-300 font-semibold py-3 px-6 rounded-xl transition"
+              className="w-full text-center border border-gray-200 bg-white text-gray-600 font-semibold py-3 px-6 rounded-xl hover:border-gray-300 hover:shadow-sm transition cursor-pointer"
             >
               Create a New Avatar
             </button>
@@ -370,7 +370,7 @@ export default function SetupPage() {
 
           <button
             onClick={() => setStep("mode")}
-            className="text-gray-500 text-sm transition"
+            className="text-gray-400 text-sm hover:text-gray-600 transition cursor-pointer"
           >
             ← Back
           </button>

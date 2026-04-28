@@ -27,15 +27,12 @@ export default function AvatarStyler({ originalBlob, onAccept, onRetake }: Props
 
     async function run() {
       try {
-        // ── 1. AI holistic transformation (or passthrough if no key) ──────
         const form = new FormData();
         form.append("photo", originalBlob, "photo.jpg");
         const res = await fetch("/api/stylize-avatar", { method: "POST", body: form });
-        console.log("[stylize-avatar] status:", res.status, "X-Stylize-Status:", res.headers.get("X-Stylize-Status"));
         if (!res.ok) throw new Error("Enhancement unavailable.");
         const aiBlob = await res.blob();
 
-        // ── 2. Canvas: paint light-blue iris on top (always applied) ──────
         const finalBlob = await applyBlueEyes(aiBlob);
 
         if (!cancelled) {
@@ -59,9 +56,9 @@ export default function AvatarStyler({ originalBlob, onAccept, onRetake }: Props
     return (
       <div className="flex flex-col items-center gap-5 py-10 w-full max-w-md mx-auto text-center">
         <span className="text-5xl select-none">✨</span>
-        <div className="w-12 h-12 border-[3px] border-[#6C63FF] border-t-transparent rounded-full animate-spin" />
-        <p className="text-white font-black text-xl">Transforming your avatar…</p>
-        <p className="text-gray-400 text-sm">AI is building your digital look. Takes ~20 seconds.</p>
+        <div className="w-12 h-12 border-[3px] border-[#8B5CF6] border-t-transparent rounded-full animate-spin" />
+        <p className="text-gray-800 font-bold text-xl">Transforming your avatar…</p>
+        <p className="text-gray-500 text-sm">AI is building your digital look. Takes ~20 seconds.</p>
       </div>
     );
   }
@@ -69,8 +66,8 @@ export default function AvatarStyler({ originalBlob, onAccept, onRetake }: Props
   if (status === "error") {
     return (
       <div className="flex flex-col items-center gap-4 py-8 w-full max-w-md mx-auto text-center">
-        <p className="text-red-400">{errorMsg}</p>
-        <button onClick={onRetake} className="text-[#6C63FF] underline text-sm">
+        <p className="text-red-500">{errorMsg}</p>
+        <button onClick={onRetake} className="text-[#8B5CF6] underline text-sm cursor-pointer">
           ← Retake photo
         </button>
       </div>
@@ -79,7 +76,7 @@ export default function AvatarStyler({ originalBlob, onAccept, onRetake }: Props
 
   return (
     <div className="flex flex-col gap-4 w-full max-w-md mx-auto">
-      <div className="relative w-full aspect-square bg-gray-900 rounded-xl overflow-hidden">
+      <div className="relative w-full aspect-square bg-gray-100 rounded-xl overflow-hidden border border-gray-200">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={showOriginal ? originalUrl : styledUrl}
@@ -88,29 +85,29 @@ export default function AvatarStyler({ originalBlob, onAccept, onRetake }: Props
         />
         <div className="absolute top-2 left-2">
           {showOriginal ? (
-            <span className="bg-black/60 text-gray-300 text-xs px-2 py-1 rounded-full">Original</span>
+            <span className="bg-white/90 text-gray-600 text-xs px-2 py-1 rounded-full shadow-sm">Original</span>
           ) : (
-            <span className="bg-[#6C63FF]/80 text-white text-xs px-2 py-1 rounded-full">✨ AI Enhanced</span>
+            <span className="bg-[#8B5CF6]/90 text-white text-xs px-2 py-1 rounded-full shadow-sm">✨ AI Enhanced</span>
           )}
         </div>
       </div>
 
       <button
         onClick={() => setShowOriginal((v) => !v)}
-        className="text-gray-400 text-sm transition text-center"
+        className="text-gray-500 text-sm transition text-center hover:text-gray-700 cursor-pointer"
       >
         {showOriginal ? "Show enhanced →" : "Compare with original"}
       </button>
 
       <button
         onClick={() => styledBlobRef.current && onAccept(styledBlobRef.current)}
-        className="w-full bg-[#6C63FF] hover:bg-[#5a52e0] text-white font-semibold py-3 rounded-xl transition"
+        className="w-full bg-[#10B981] hover:bg-[#059669] text-white font-semibold py-3 rounded-xl transition cursor-pointer shadow-sm hover:shadow-md"
       >
         Love it! Use this avatar
       </button>
       <button
         onClick={onRetake}
-        className="w-full border border-gray-600 text-gray-300 font-semibold py-2 rounded-xl transition text-sm"
+        className="w-full border border-gray-200 bg-white text-gray-600 font-semibold py-2 rounded-xl hover:border-gray-300 hover:shadow-sm transition cursor-pointer text-sm"
       >
         Retake Photo
       </button>
@@ -119,13 +116,10 @@ export default function AvatarStyler({ originalBlob, onAccept, onRetake }: Props
 }
 
 // ── Blue-eye canvas pass ──────────────────────────────────────────────────────
-// Runs on the AI-transformed (or original) blob. Detects iris positions with
-// MediaPipe, then paints light-blue via canvas composite operations.
 
 async function applyBlueEyes(sourceBlob: Blob): Promise<Blob> {
   const img = await blobToImage(sourceBlob);
 
-  // Try MediaPipe iris detection; fall back to no-op if unavailable
   let iris: IrisPoints | null = null;
   try {
     const { FaceLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision");
@@ -168,10 +162,10 @@ async function applyBlueEyes(sourceBlob: Blob): Promise<Blob> {
       }
     }
   } catch {
-    // MediaPipe unavailable — skip iris coloring, return source as-is
+    // MediaPipe unavailable — skip iris coloring
   }
 
-  if (!iris) return sourceBlob; // Nothing to paint — return unchanged
+  if (!iris) return sourceBlob;
 
   return paintIris(img, iris);
 }
@@ -187,7 +181,6 @@ function paintIris(img: HTMLImageElement, iris: IrisPoints): Promise<Blob> {
     ctx.drawImage(img, 0, 0);
 
     for (const { x, y, r } of [iris.left, iris.right]) {
-      // Pass A: replace hue with light blue while keeping texture
       ctx.save();
       ctx.globalCompositeOperation = "color";
       ctx.globalAlpha = 0.90;
@@ -201,7 +194,6 @@ function paintIris(img: HTMLImageElement, iris: IrisPoints): Promise<Blob> {
       ctx.fill();
       ctx.restore();
 
-      // Pass B: luminance glow — makes eyes appear bright/digital
       ctx.save();
       ctx.globalCompositeOperation = "screen";
       ctx.globalAlpha = 0.50;
@@ -215,7 +207,6 @@ function paintIris(img: HTMLImageElement, iris: IrisPoints): Promise<Blob> {
       ctx.fill();
       ctx.restore();
 
-      // Pass C: darken pupil for depth
       ctx.save();
       ctx.globalCompositeOperation = "multiply";
       ctx.globalAlpha = 0.72;
@@ -237,8 +228,6 @@ function paintIris(img: HTMLImageElement, iris: IrisPoints): Promise<Blob> {
     );
   });
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 interface IrisPoints {
   left:  { x: number; y: number; r: number };

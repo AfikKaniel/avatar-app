@@ -184,6 +184,7 @@ export async function buildContext(
   options: {
     query?: string;
     inlineHealthData?: HealthSnapshot;
+    isTestData?: boolean;
   } = {}
 ): Promise<string> {
   const [config, dbSnapshot, memory, secrets] = await Promise.all([
@@ -215,7 +216,10 @@ export async function buildContext(
 
   const health = healthBlock(snapshot);
   if (health) {
-    sections.push("", "## My current health data", health);
+    const label = options.isTestData
+      ? "## Simulated health data (admin test — not real user data)"
+      : "## My current health data";
+    sections.push("", label, health);
   }
 
   if (memory) {

@@ -13,7 +13,6 @@ interface AvatarSecrets {
   hedraKey: string | null;      hedraSet: boolean;
   hedraSecret: string | null;   hedraSecretSet: boolean;
   stabilityKey: string | null;  stabilitySet: boolean;
-  falKey: string | null;        falSet: boolean;
   elevenlabsKey: string | null; elevenlabsSet: boolean;
   livekitKey: string | null;
   livekitSecret: string | null;
@@ -51,6 +50,7 @@ interface TestResult {
   chunks: Chunk[];
   response: string;
   systemPrompt: string;
+  modelUsed?: string;
 }
 
 interface Secrets {
@@ -119,6 +119,13 @@ function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+function modelLabel(m?: string | null) {
+  if (!m) return "Haiku";
+  if (m.includes("opus"))   return "Opus";
+  if (m.includes("sonnet")) return "Sonnet";
+  return "Haiku";
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function BrainAdminPage() {
@@ -154,17 +161,16 @@ export default function BrainAdminPage() {
   const [newHedraKey,       setNewHedraKey]       = useState("");
   const [newHedraSecret,    setNewHedraSecret]    = useState("");
   const [newStabilityKey,   setNewStabilityKey]   = useState("");
-  const [newFalKey,         setNewFalKey]         = useState("");
   const [newElevenlabsKey,  setNewElevenlabsKey]  = useState("");
   const [newLivekitKey,     setNewLivekitKey]     = useState("");
   const [newLivekitSecret,  setNewLivekitSecret]  = useState("");
   const [newLivekitUrl,     setNewLivekitUrl]     = useState("");
 
   // Live key validation — avatar
-  type AvatarProvider = "hedra" | "elevenlabs" | "stability" | "fal" | "livekit";
-  const [avStatus,  setAvStatus]  = useState<Record<AvatarProvider, KeyStatus>>({ hedra:"idle", elevenlabs:"idle", stability:"idle", fal:"idle", livekit:"idle" });
-  const [avLatency, setAvLatency] = useState<Record<AvatarProvider, number | null>>({ hedra:null, elevenlabs:null, stability:null, fal:null, livekit:null });
-  const [avError,   setAvError]   = useState<Record<AvatarProvider, string | null>>({ hedra:null, elevenlabs:null, stability:null, fal:null, livekit:null });
+  type AvatarProvider = "hedra" | "elevenlabs" | "stability" | "livekit";
+  const [avStatus,  setAvStatus]  = useState<Record<AvatarProvider, KeyStatus>>({ hedra:"idle", elevenlabs:"idle", stability:"idle", livekit:"idle" });
+  const [avLatency, setAvLatency] = useState<Record<AvatarProvider, number | null>>({ hedra:null, elevenlabs:null, stability:null, livekit:null });
+  const [avError,   setAvError]   = useState<Record<AvatarProvider, string | null>>({ hedra:null, elevenlabs:null, stability:null, livekit:null });
 
   // Paste text state
   const [pasteOpen, setPasteOpen]     = useState(false);
@@ -178,6 +184,13 @@ export default function BrainAdminPage() {
   const [testResult, setTestResult]     = useState<TestResult | null>(null);
   const [testError, setTestError]       = useState<string | null>(null);
   const [showPrompt, setShowPrompt]     = useState(false);
+  const [showTestHealth, setShowTestHealth] = useState(false);
+  const [testHrv,        setTestHrv]        = useState("58");
+  const [testRestingHr,  setTestRestingHr]  = useState("62");
+  const [testSleep,      setTestSleep]      = useState("7.2");
+  const [testSteps,      setTestSteps]      = useState("8400");
+  const [testRecovery,   setTestRecovery]   = useState("74");
+  const [testHealthState, setTestHealthState] = useState("good");
 
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -265,7 +278,6 @@ export default function BrainAdminPage() {
         if (d.hedraSet)      testAvatarKey("hedra");
         if (d.elevenlabsSet) testAvatarKey("elevenlabs");
         if (d.stabilitySet)  testAvatarKey("stability");
-        if (d.falSet)        testAvatarKey("fal");
         if (d.livekitSet)    testAvatarKey("livekit");
       })
       .catch(() => {});
@@ -278,11 +290,25 @@ export default function BrainAdminPage() {
       if (avatarSecrets.hedraSet)      testAvatarKey("hedra");
       if (avatarSecrets.elevenlabsSet) testAvatarKey("elevenlabs");
       if (avatarSecrets.stabilitySet)  testAvatarKey("stability");
-      if (avatarSecrets.falSet)        testAvatarKey("fal");
       if (avatarSecrets.livekitSet)    testAvatarKey("livekit");
     }, RETEST_INTERVAL_MS);
     return () => clearInterval(id);
   }, [tab, avatarSecrets, testAvatarKey, RETEST_INTERVAL_MS]);
+
+  // Periodic re-validation while Brain Map tab is open
+  useEffect(() => {
+    if (tab !== "map") return;
+    const runAll = () => {
+      if (secrets?.anthropicSet)        testKey("anthropic");
+      if (avatarSecrets?.elevenlabsSet) testAvatarKey("elevenlabs");
+      if (avatarSecrets?.hedraSet)      testAvatarKey("hedra");
+      if (avatarSecrets?.livekitSet)    testAvatarKey("livekit");
+      if (avatarSecrets?.stabilitySet)  testAvatarKey("stability");
+    };
+    runAll();
+    const id = setInterval(runAll, RETEST_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [tab, secrets, avatarSecrets, testKey, testAvatarKey, RETEST_INTERVAL_MS]);
 
   // ── Save avatar secrets ────────────────────────────────────────────────────
 
@@ -293,7 +319,6 @@ export default function BrainAdminPage() {
       if (newHedraKey.trim())      body.hedraKey      = newHedraKey.trim();
       if (newHedraSecret.trim())   body.hedraSecret   = newHedraSecret.trim();
       if (newStabilityKey.trim())  body.stabilityKey  = newStabilityKey.trim();
-      if (newFalKey.trim())        body.falKey        = newFalKey.trim();
       if (newElevenlabsKey.trim()) body.elevenlabsKey = newElevenlabsKey.trim();
       if (newLivekitKey.trim())    body.livekitKey    = newLivekitKey.trim();
       if (newLivekitSecret.trim()) body.livekitSecret = newLivekitSecret.trim();
@@ -303,12 +328,11 @@ export default function BrainAdminPage() {
       if (!res.ok) throw new Error(await res.text());
       const fresh = await fetch("/api/avatar/secrets").then(r => r.json()) as AvatarSecrets;
       setAvatarSecrets(fresh);
-      setNewHedraKey(""); setNewHedraSecret(""); setNewStabilityKey(""); setNewFalKey("");
+      setNewHedraKey(""); setNewHedraSecret(""); setNewStabilityKey("");
       setNewElevenlabsKey(""); setNewLivekitKey(""); setNewLivekitSecret(""); setNewLivekitUrl("");
       if (fresh.hedraSet)      testAvatarKey("hedra");
       if (fresh.elevenlabsSet) testAvatarKey("elevenlabs");
       if (fresh.stabilitySet)  testAvatarKey("stability");
-      if (fresh.falSet)        testAvatarKey("fal");
       if (fresh.livekitSet)    testAvatarKey("livekit");
       flash(true, "Avatar connections saved — active immediately");
     } catch (e) { flash(false, "Save failed: " + String(e)); }
@@ -451,10 +475,19 @@ export default function BrainAdminPage() {
     setTestError(null);
     setShowPrompt(false);
     try {
+      const testHealthData = showTestHealth ? {
+        hrv:           parseFloat(testHrv)       || null,
+        restingHr:     parseFloat(testRestingHr) || null,
+        sleepHours:    parseFloat(testSleep)      || null,
+        steps:         parseInt(testSteps)        || null,
+        recoveryScore: parseFloat(testRecovery)  || null,
+        healthState:   testHealthState,
+      } : null;
+
       const res = await fetch("/api/brain/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: testQuery }),
+        body: JSON.stringify({ query: testQuery, testHealthData }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data: TestResult = await res.json();
@@ -1042,6 +1075,67 @@ export default function BrainAdminPage() {
             </p>
           </div>
 
+          {/* Test Health Data panel */}
+          <div className="mb-5 rounded-2xl overflow-hidden"
+            style={{ border: "1px solid rgba(251,146,60,0.25)", background: "rgba(251,146,60,0.03)" }}>
+            <button
+              className="w-full flex items-center justify-between px-5 py-3"
+              style={{ background: showTestHealth ? "rgba(251,146,60,0.08)" : "transparent", cursor: "pointer", border: "none" }}
+              onClick={() => setShowTestHealth(v => !v)}>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full" style={{ background: "#fb923c" }}/>
+                <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#fb923c" }}>
+                  Test Health Data
+                </span>
+                <span className="text-xs px-2 py-0.5 rounded-md"
+                  style={{ background: "rgba(251,146,60,0.12)", color: "#fb923c", border: "1px solid rgba(251,146,60,0.2)" }}>
+                  {showTestHealth ? "active · injected into context" : "disabled"}
+                </span>
+              </div>
+              <span style={{ color: "#fb923c", fontSize: 12 }}>{showTestHealth ? "▲" : "▼"}</span>
+            </button>
+            {showTestHealth && (
+              <div className="px-5 py-4 space-y-4" style={{ borderTop: "1px solid rgba(251,146,60,0.15)" }}>
+                <p className="text-xs" style={{ color: "#94A3B8" }}>
+                  ⚠ Simulated values — injected as test health context only. Real user data is NOT used.
+                </p>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: "HRV (ms)",        value: testHrv,       set: setTestHrv,       placeholder: "58"  },
+                    { label: "Resting HR (bpm)", value: testRestingHr, set: setTestRestingHr, placeholder: "62"  },
+                    { label: "Sleep (hrs)",      value: testSleep,     set: setTestSleep,     placeholder: "7.2" },
+                    { label: "Steps",            value: testSteps,     set: setTestSteps,     placeholder: "8400"},
+                    { label: "Recovery (%)",     value: testRecovery,  set: setTestRecovery,  placeholder: "74"  },
+                  ].map(({ label, value, set, placeholder }) => (
+                    <div key={label}>
+                      <label className="block text-xs mb-1" style={{ color: "#64748B" }}>{label}</label>
+                      <input
+                        type="number"
+                        value={value}
+                        onChange={e => set(e.target.value)}
+                        placeholder={placeholder}
+                        className="w-full px-3 py-2 rounded-lg text-sm outline-none"
+                        style={{ background: "#fff", border: "1px solid rgba(0,0,0,0.1)", color: "#1E293B" }}
+                      />
+                    </div>
+                  ))}
+                  <div>
+                    <label className="block text-xs mb-1" style={{ color: "#64748B" }}>Health State</label>
+                    <select
+                      value={testHealthState}
+                      onChange={e => setTestHealthState(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg text-sm outline-none"
+                      style={{ background: "#fff", border: "1px solid rgba(0,0,0,0.1)", color: "#1E293B" }}>
+                      {["peak","good","tired","stressed","depleted"].map(s => (
+                        <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Query input */}
           <div className="flex gap-3 mb-8">
             <input
@@ -1154,7 +1248,7 @@ export default function BrainAdminPage() {
                   <span className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#a78bfa" }}>
                     Brain Response
                   </span>
-                  <span className="text-xs ml-1" style={{ color: "#64748B" }}>Claude Haiku · live generation</span>
+                  <span className="text-xs ml-1" style={{ color: "#64748B" }}>Claude {modelLabel(testResult.modelUsed ?? selectedModel)} · live generation</span>
                 </div>
                 <div className="px-5 py-5">
                   <p className="text-sm leading-relaxed" style={{ color: "#1E293B" }}>
@@ -1243,16 +1337,6 @@ export default function BrainAdminPage() {
                 accent: "#6366f1",
                 fields: [
                   { key: "newStabilityKey", set: newStabilityKey, setter: setNewStabilityKey, placeholder: "sk-…", label: "API Key", current: avatarSecrets?.stabilityKey, isSet: avatarSecrets?.stabilitySet },
-                ],
-              },
-              {
-                id: "fal" as AvatarProvider,
-                label: "Fal.AI",
-                badge: "AI Generation",
-                desc: "AI image and video generation for avatar customization.",
-                accent: "#a78bfa",
-                fields: [
-                  { key: "newFalKey", set: newFalKey, setter: setNewFalKey, placeholder: "key_id:key_secret", label: "API Key", current: avatarSecrets?.falKey, isSet: avatarSecrets?.falSet },
                 ],
               },
               {
@@ -1353,7 +1437,7 @@ export default function BrainAdminPage() {
               Claude synthesises one response from the full picture — there is no fallback chain.
             </p>
           </div>
-          <NeuralNetViz docs={docs} totalChunks={totalChunks} secrets={secrets} />
+          <NeuralNetViz docs={docs} totalChunks={totalChunks} secrets={secrets} avatarSecrets={avatarSecrets} anthropicStatus={anthropicStatus} avStatus={avStatus} />
         </div>
       )}
 
@@ -1438,95 +1522,113 @@ function NeuralNetViz({
   docs,
   totalChunks,
   secrets,
+  avatarSecrets,
+  anthropicStatus,
+  avStatus,
 }: {
   docs: MedicalDoc[];
   totalChunks: number;
   secrets: Secrets | null;
+  avatarSecrets: AvatarSecrets | null;
+  anthropicStatus: KeyStatus;
+  avStatus: Record<"hedra" | "elevenlabs" | "stability" | "livekit", KeyStatus>;
 }) {
-  const VW = 1300, VH = 540;
+  const VW = 1350, VH = 520;
 
-  // Left: inputs
-  const LX = 165, IR = 27;
-  const INY = [55, 130, 210, 290, 370, 450];
+  // Left: input sources
+  const LX = 140, IR = 24;
+  const INY = [58, 132, 206, 280, 354, 428];
 
-  // Center: Claude (generation)
-  const CLX = 415, CLY = 265, CLR = 52;
+  // Session pipeline — all at y = 270
+  // Claude shifted right to CLX=420 to widen the inputs→Claude gap and give the RAG filter room
+  const CLX = 420, CLY = 270, CLR = 50;    // Claude (generation)
+  const TTSX = 590, TTSY = 270, TTSR = 26; // ElevenLabs TTS (synthesis)
+  const HX   = 760, HY   = 270, HR   = 28; // Hedra (assembly)
+  const LKX  = 925, LKY  = 270, LKR  = 24; // LiveKit (delivery)
+  const RX   = 1100, RY  = 270, RR   = 32; // Output
 
-  // Middle: Output (convergence of brain + avatar pipeline)
-  const RX = 635, RY = 265, RR = 33;
+  // Onboarding nodes — sit directly above their session counterparts
+  const OB_Y = 90, OB_R = 26;   // same size tier as session nodes
+  const CLONE_X = 590;   // above ElevenLabs TTS
+  const STAB_X  = 760;   // above Hedra (Stability AI generates the avatar portrait Hedra uses)
 
-  // Avatar pipeline — 3 right-hand stages flowing right → left into Output
-  // Stage 1 (DELIVERY): LiveKit
-  const LKX = 810, LKY = 265, LKR = 26;
-  // Stage 2 (ASSEMBLY): Hedra
-  const HX = 990, HY = 265, HR = 30;
-  // Stage 3 (CREATION): Fal.AI · Stability AI · ElevenLabs
-  const CRX = 1165, CRR = 24;
-  const CRY = [115, 265, 415];
+  // Active state driven by real API key status
+  const cloneActive = avatarSecrets?.elevenlabsSet ?? false;
+  const stabActive  = avatarSecrets?.stabilitySet  ?? false;
+
+  // ── Connection health (real-time API validation) ───────────────────────────
+  const isOk = (s: KeyStatus) => s === "valid";
+  const claudeOk     = isOk(anthropicStatus);
+  const elevenlabsOk = isOk(avStatus.elevenlabs);
+  const hedraOk      = isOk(avStatus.hedra);
+  const livekitOk    = isOk(avStatus.livekit);
+  const stabilityOk  = isOk(avStatus.stability);
+
+  // Per-connection broken flags
+  const srcsToClaudeOk  = claudeOk;
+  const claudeToTTSOk   = claudeOk && elevenlabsOk;
+  const ttsToHedraOk    = elevenlabsOk && hedraOk;
+  const hedraToLKOk     = hedraOk && livekitOk;
+  const lkToOutOk       = livekitOk;
+  const claudeToOutOk   = claudeOk;
+  const cloneToTTSOk    = elevenlabsOk;
+  const stabToHedraOk   = stabilityOk && hedraOk;
+
+  // Returns stream path style props for active vs broken connection
+  const connStyle = (ok: boolean) => ok
+    ? { sw: "2.6", dash: "12 36", opacity: "0.92", filter: "url(#nnv-glow-sm)" as string | undefined, animated: true }
+    : { sw: "1.3", dash: "6 12",  opacity: "0.35", filter: undefined as string | undefined,            animated: false };
+
+  const stClaudeToTTS  = connStyle(claudeToTTSOk);
+  const stTTSToHedra   = connStyle(ttsToHedraOk);
+  const stHedraToLK    = connStyle(hedraToLKOk);
+  const stLKToOut      = connStyle(lkToOutOk);
+  const stClaudeToOut  = connStyle(claudeToOutOk);
+  const stCloneToTTS   = connStyle(cloneToTTSOk);
+  const stStabToHedra  = connStyle(stabToHedraOk);
 
   // ── Node data ──────────────────────────────────────────────────────────────
   const sources = [
-    { id: "config",    label: "Brain Config",   sub: "Persona · Style · Safety",                    color: "#f87171", icon: "⚙",  active: true,            r: IR,  planned: false },
-    { id: "docs",      label: "Knowledge Base", sub: `${docs.length} docs · ${totalChunks} chunks`, color: "#a78bfa", icon: "◈",  active: totalChunks > 0, r: IR,  planned: false },
-    { id: "health",    label: "HealthKit Data", sub: "HRV · Sleep · Steps",                         color: "#34d399", icon: "♥",  active: true,            r: IR,  planned: false },
-    { id: "wearables", label: "Wearables",      sub: "Oura Ring · Whoop",                           color: "#2dd4bf", icon: "⌚", active: false,           r: IR,  planned: true  },
-    { id: "memory",    label: "Session Memory", sub: "Past conversations",                           color: "#38bdf8", icon: "◉",  active: true,            r: IR,  planned: false },
-    { id: "training",  label: "Claude Training",sub: "Medical · health · science",                  color: "#f59e0b", icon: "✦",  active: true,            r: IR,  planned: false },
+    { id: "config",    label: "Brain Config",    sub: "Persona · Style · Safety",                    color: "#f87171", icon: "⚙",  active: true,            planned: false },
+    { id: "docs",      label: "Knowledge Base",  sub: `${docs.length} docs · ${totalChunks} chunks`, color: "#a78bfa", icon: "◈",  active: totalChunks > 0, planned: false },
+    { id: "health",    label: "HealthKit Data",  sub: "HRV · Sleep · Steps",                         color: "#34d399", icon: "♥",  active: true,            planned: false },
+    { id: "wearables", label: "Wearables",       sub: "Oura Ring · Whoop",                           color: "#2dd4bf", icon: "⌚", active: false,           planned: true  },
+    { id: "memory",    label: "Session Memory",  sub: "Past conversations",                           color: "#38bdf8", icon: "◉",  active: true,            planned: false },
+    { id: "training",  label: "Claude Training", sub: "Medical · health · science",                  color: "#f59e0b", icon: "✦",  active: true,            planned: false },
   ];
-
-  const creationNodes = [
-    { id: "stability",  label: "Stability AI", sub: "Face portrait · app UI",    color: "#fb923c", icon: "◈" },
-    { id: "fal",        label: "Fal.AI",       sub: "Body avatar · flux-pulid", color: "#e879f9", icon: "✦" },
-    { id: "elevenlabs", label: "ElevenLabs",   sub: "Voice clone · TTS",        color: "#22d3ee", icon: "♪" },
-  ];
-
-  const modelLabel = (m?: string | null) => {
-    if (!m) return "Haiku";
-    if (m.includes("opus"))   return "Opus";
-    if (m.includes("sonnet")) return "Sonnet";
-    return "Haiku";
-  };
 
   // ── Path generators ────────────────────────────────────────────────────────
-  // Left inputs → Claude
-  const connPath = (srcY: number, srcR: number) => {
-    const fx = LX + srcR, tx = CLX - CLR, cpx = (fx + tx) / 2;
+  const connPath = (srcY: number) => {
+    const fx = LX + IR, tx = CLX - CLR, cpx = (fx + tx) / 2;
     return `M ${fx},${srcY} C ${cpx},${srcY} ${cpx},${CLY} ${tx},${CLY}`;
   };
 
-  // Creation node[i] → Hedra (right-to-left, converging)
-  const connCreation = (i: number) => {
-    const fx = CRX - CRR, fy = CRY[i], tx = HX + HR, ty = HY;
-    const cpx = (fx + tx) / 2;
-    const sameY = Math.abs(fy - ty) < 6;
-    const cp1y = sameY ? fy - 30 : fy;
-    const cp2y = sameY ? ty - 30 : ty;
-    return `M ${fx},${fy} C ${cpx},${cp1y} ${cpx},${cp2y} ${tx},${ty}`;
-  };
+  // Session pipeline connections (left-to-right)
+  const connClaudeToTTS = `M ${CLX + CLR},${CLY} C ${CLX+CLR+22},${CLY-20} ${TTSX-TTSR-22},${TTSY-20} ${TTSX-TTSR},${TTSY}`;
+  const connTTSToHedra  = `M ${TTSX+TTSR},${TTSY} C ${TTSX+TTSR+22},${TTSY-20} ${HX-HR-22},${HY-20} ${HX-HR},${HY}`;
+  const connHedraToLK   = `M ${HX+HR},${HY} C ${(HX+HR+LKX-LKR)/2},${HY-26} ${(HX+HR+LKX-LKR)/2},${LKY-26} ${LKX-LKR},${LKY}`;
+  const connLKToOut     = `M ${LKX+LKR},${LKY} C ${(LKX+LKR+RX-RR)/2},${LKY-26} ${(LKX+LKR+RX-RR)/2},${RY-26} ${RX-RR},${RY}`;
 
-  // Stability AI → Output directly (arches above the pipeline, bypasses Hedra/LiveKit)
-  // photo_url is stored for the app UI / avatar display — Hedra only uses what the agent crops from Fal.AI
-  const connStabilityToOut = `M ${CRX - CRR},${CRY[0]} C ${HX},75 ${LKX},75 ${RX + RR},${RY}`;
+  // Onboarding → session — wide bowed curves (longer arc = same visual dash density as session lines)
+  const connCloneToTTS  = `M ${CLONE_X},${OB_Y+OB_R} C ${CLONE_X-90},${(OB_Y+OB_R+TTSY-TTSR)/2} ${CLONE_X-90},${(OB_Y+OB_R+TTSY-TTSR)/2} ${CLONE_X},${TTSY-TTSR}`;
+  // Stability AI (above Hedra) → Hedra: bow to the right so it doesn't overlap Clone→TTS
+  const connStabToHedra = `M ${STAB_X},${OB_Y+OB_R} C ${STAB_X+90},${(OB_Y+OB_R+HY-HR)/2} ${STAB_X+90},${(OB_Y+OB_R+HY-HR)/2} ${STAB_X},${HY-HR}`;
 
-  // Hedra → LiveKit (same Y, bow upward)
-  const connHedraToLK = `M ${HX - HR},${HY} C ${(HX-HR+LKX+LKR)/2},${HY-28} ${(HX-HR+LKX+LKR)/2},${LKY-28} ${LKX + LKR},${LKY}`;
+  // Claude → Output direct (text/chat path, bows below the voice pipeline)
+  const connClaudeToOut = `M ${CLX+CLR},${CLY} C ${CLX+CLR+100},${CLY+115} ${RX-RR-100},${RY+115} ${RX-RR},${RY}`;
 
-  // LiveKit → Output (same Y, bow upward)
-  const connLKToOut = `M ${LKX - LKR},${LKY} C ${(LKX-LKR+RX+RR)/2},${LKY-28} ${(LKX-LKR+RX+RR)/2},${RY-28} ${RX + RR},${RY}`;
-
-  // Claude → Output
-  const connClaudeOut = `M ${CLX + CLR},${CLY} C ${CLX+CLR+28},${CLY-18} ${RX-RR-28},${RY-18} ${RX - RR},${RY}`;
-
-  // RAG filter gate (on the Knowledge Base path)
-  const kbGateX = 248, kbGateY = 140;
+  // RAG filter gate — positioned at t≈0.25 on the KB→Claude bezier (fx=164,tx=370,cpx=267)
+  // At t=0.25: x≈226, y≈154 (mathematically on the curve)
+  const kbGateX = 226, kbGateY = 154;
   const gW = 74, gH = 38, gCut = 11;
   const hex = (cx: number, cy: number, w: number, h: number, cut: number) =>
     `${cx-w/2},${cy} ${cx-w/2+cut},${cy-h/2} ${cx+w/2-cut},${cy-h/2} ${cx+w/2},${cy} ${cx+w/2-cut},${cy+h/2} ${cx-w/2+cut},${cy+h/2}`;
 
-  // Feedback arc: Output bottom → Session Memory (INY[4])
-  const feedbackD = `M ${RX},${RY + RR + 4} C ${RX + 36},${VH - 18} ${340},${VH - 12} ${LX},${INY[4] + IR + 2}`;
+  // Feedback arc: Output → Session Memory
+  const feedbackD = `M ${RX},${RY+RR+4} C ${RX+40},${VH-18} ${380},${VH-12} ${LX},${INY[4]+IR+2}`;
 
   return (
+    <>
     <div className="rounded-2xl overflow-hidden"
       style={{ border: "1px solid rgba(0,0,0,0.08)", background: "rgba(4,4,20,0.8)" }}>
       <svg viewBox={`0 0 ${VW} ${VH}`} style={{ width: "100%", display: "block" }}>
@@ -1560,134 +1662,155 @@ function NeuralNetViz({
             <stop offset="0%"   stopColor="#a3e635" stopOpacity="0.45"/>
             <stop offset="100%" stopColor="#1a2e05" stopOpacity="0.3"/>
           </radialGradient>
+          <radialGradient id="nnv-rg-tts" cx="40%" cy="35%">
+            <stop offset="0%"   stopColor="#22d3ee" stopOpacity="0.5"/>
+            <stop offset="100%" stopColor="#0e4a5a" stopOpacity="0.3"/>
+          </radialGradient>
         </defs>
 
         {/* Background dots */}
-        {Array.from({ length: 12 }, (_, c) =>
+        {Array.from({ length: 13 }, (_, c) =>
           Array.from({ length: 9 }, (_, r) => (
-            <circle key={`bg-${c}-${r}`} cx={c * 112 + 14} cy={r * 65 + 14} r="1" fill="#fff" fillOpacity="0.025"/>
+            <circle key={`bg-${c}-${r}`} cx={c * 108 + 14} cy={r * 63 + 14} r="1" fill="#fff" fillOpacity="0.025"/>
           ))
         )}
 
-        {/* Stage dividers */}
-        {[530, 720, 900, 1080].map(x => (
-          <line key={x} x1={x} y1={28} x2={x} y2={VH - 28}
+        {/* Onboarding band — spans ElevenLabs Clone (590) and Stability AI (760) */}
+        <rect x="516" y="28" width="320" height="122" rx="8"
+          fill="rgba(255,255,255,0.008)" stroke="rgba(255,255,255,0.04)" strokeWidth="1" strokeDasharray="6 8"/>
+        <text x="676" y="44" textAnchor="middle" fontSize="7" fill="#ffffff" fillOpacity="0.2"
+          fontWeight="700" letterSpacing="2.5">ONE-TIME ONBOARDING</text>
+
+        {/* Stage dividers (session area, y 168 → bottom) */}
+        {[267, 516, 674, 843, 1012].map(x => (
+          <line key={x} x1={x} y1={168} x2={x} y2={VH - 20}
             stroke="#ffffff" strokeOpacity="0.03" strokeWidth="1" strokeDasharray="4 10"/>
         ))}
+
+        {/* Section labels — below the onboarding band, clear of all node text */}
+        <text x={LX}   y={183} textAnchor="middle" fontSize="7.5" fill="#323248" fontWeight="600" letterSpacing="2">INPUTS</text>
+        <text x={CLX}  y={183} textAnchor="middle" fontSize="7.5" fill="#504070" fontWeight="600" letterSpacing="2">GENERATION</text>
+        <text x={TTSX} y={183} textAnchor="middle" fontSize="7.5" fill="#0a4a55" fontWeight="600" letterSpacing="2">SYNTHESIS</text>
+        <text x={HX}   y={183} textAnchor="middle" fontSize="7.5" fill="#3d2010" fontWeight="600" letterSpacing="2">ASSEMBLY</text>
+        <text x={LKX}  y={183} textAnchor="middle" fontSize="7.5" fill="#2a3318" fontWeight="600" letterSpacing="2">DELIVERY</text>
+        {/* OUTPUT section label removed — Stability AI is directly above and makes it redundant */}
 
         {/* ── TRAIL LAYER ── */}
 
         {/* Inputs → Claude */}
         {sources.map((s, i) => (
-          <path key={`trail-${i}`} d={connPath(INY[i], s.r)} fill="none"
+          <path key={`trail-${i}`} d={connPath(INY[i])} fill="none"
             stroke={s.color} strokeWidth={s.planned ? "0.8" : "1.4"}
             strokeOpacity={s.planned ? 0.07 : 0.14}
             strokeDasharray={s.planned ? "3 8" : undefined}/>
         ))}
 
-        {/* Claude → Output */}
-        <path d={connClaudeOut} fill="none" stroke="#c4b5fd" strokeWidth="1.5" strokeOpacity="0.18"/>
+        {/* Session pipeline trails */}
+        <path d={connClaudeToTTS} fill="none" stroke="#a78bfa" strokeWidth="1.5" strokeOpacity="0.18"/>
+        <path d={connTTSToHedra}  fill="none" stroke="#22d3ee" strokeWidth="1.4" strokeOpacity="0.16"/>
+        <path d={connHedraToLK}   fill="none" stroke="#f97316" strokeWidth="1.4" strokeOpacity="0.16"/>
+        <path d={connLKToOut}     fill="none" stroke="#a3e635" strokeWidth="1.4" strokeOpacity="0.16"/>
 
-        {/* Fal.AI + ElevenLabs → Hedra */}
-        {[1, 2].map(i => (
-          <path key={`cr-trail-${i}`} d={connCreation(i)} fill="none"
-            stroke={creationNodes[i].color} strokeWidth="1.4" strokeOpacity="0.14"/>
-        ))}
+        {/* Claude → Output direct text trail (bows below) */}
+        <path d={connClaudeToOut} fill="none" stroke="#c4b5fd" strokeWidth="1.4" strokeOpacity="0.12" strokeDasharray="5 10"/>
 
-        {/* Stability AI → Output directly (arches above the pipeline) */}
-        <path d={connStabilityToOut} fill="none"
-          stroke={creationNodes[0].color} strokeWidth="1.4" strokeOpacity="0.14" strokeDasharray="5 8"/>
-
-        {/* Hedra → LiveKit */}
-        <path d={connHedraToLK} fill="none" stroke="#f97316" strokeWidth="1.4" strokeOpacity="0.16"/>
-
-        {/* LiveKit → Output */}
-        <path d={connLKToOut} fill="none" stroke="#a3e635" strokeWidth="1.4" strokeOpacity="0.16"/>
+        {/* Onboarding → session trails */}
+        <path d={connCloneToTTS}  fill="none" stroke="#22d3ee" strokeWidth="1.4" strokeOpacity="0.14"/>
+        <path d={connStabToHedra} fill="none" stroke="#fb923c" strokeWidth="1.4" strokeOpacity="0.14"/>
 
         {/* Feedback arc */}
-        <path d={feedbackD} fill="none"
-          stroke="#38bdf8" strokeWidth="1" strokeOpacity="0.08" strokeDasharray="3 8"/>
+        <path d={feedbackD} fill="none" stroke="#38bdf8" strokeWidth="1" strokeOpacity="0.08" strokeDasharray="3 8"/>
 
-        {/* ── STREAMING LAYER ── */}
+        {/* ── STREAM LAYER ── */}
 
         {/* Inputs → Claude */}
         {sources.map((s, i) => {
-          const d = connPath(INY[i], s.r);
-          const dashLen = s.planned ? 5 : 12;
-          const gap     = s.planned ? 24 : 36;
-          const period  = dashLen + gap;
+          const d = connPath(INY[i]);
+          const broken = !srcsToClaudeOk;
+          const dashLen = broken ? 6  : (s.planned ? 5  : 12);
+          const gap     = broken ? 12 : (s.planned ? 24 : 36);
           return (
             <path key={`stream-${i}`} d={d} fill="none"
-              stroke={s.color} strokeWidth="2.6" strokeLinecap="round"
+              stroke={s.color}
+              strokeWidth={broken ? "1.3" : "2.6"}
+              strokeLinecap="round"
               strokeDasharray={`${dashLen} ${gap}`}
-              strokeOpacity={s.planned ? 0.38 : 0.92}
-              filter="url(#nnv-glow-sm)">
+              strokeOpacity={broken ? "0.35" : (s.planned ? "0.38" : "0.92")}
+              filter={broken ? undefined : "url(#nnv-glow-sm)"}>
               {/* @ts-ignore */}
-              <animate attributeName="stroke-dashoffset"
-                from="0" to={`-${period}`}
-                dur={s.planned ? "3.0s" : `${1.05 + i * 0.12}s`}
-                repeatCount="indefinite"/>
+              {!broken && <animate attributeName="stroke-dashoffset" from="0" to={`-${dashLen + gap}`}
+                dur={s.planned ? "3.0s" : `${1.05 + i * 0.12}s`} repeatCount="indefinite"/>}
             </path>
           );
         })}
 
-        {/* Claude → Output */}
-        <path d={connClaudeOut} fill="none" stroke="#a78bfa" strokeWidth="2.6"
-          strokeLinecap="round" strokeDasharray="12 36" strokeOpacity="0.92"
-          filter="url(#nnv-glow-sm)">
+        {/* Claude → TTS */}
+        <path d={connClaudeToTTS} fill="none" stroke="#a78bfa" strokeWidth={stClaudeToTTS.sw}
+          strokeLinecap="round" strokeDasharray={stClaudeToTTS.dash}
+          strokeOpacity={stClaudeToTTS.opacity} filter={stClaudeToTTS.filter}>
           {/* @ts-ignore */}
-          <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="1.1s" repeatCount="indefinite"/>
+          {stClaudeToTTS.animated && <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="1.1s" repeatCount="indefinite"/>}
         </path>
 
-        {/* Fal.AI + ElevenLabs → Hedra (right-to-left) */}
-        {[1, 2].map(i => (
-          <path key={`cr-stream-${i}`} d={connCreation(i)} fill="none"
-            stroke={creationNodes[i].color} strokeWidth="2.6" strokeLinecap="round"
-            strokeDasharray="10 32" strokeOpacity="0.88"
-            filter="url(#nnv-glow-sm)">
-            {/* @ts-ignore */}
-            <animate attributeName="stroke-dashoffset" from="0" to="-42"
-              dur={`${1.1 + i * 0.2}s`} repeatCount="indefinite"/>
-          </path>
-        ))}
-
-        {/* Stability AI → Output (arched above pipeline, dashed = display path) */}
-        <path d={connStabilityToOut} fill="none"
-          stroke={creationNodes[0].color} strokeWidth="2.2" strokeLinecap="round"
-          strokeDasharray="6 20" strokeOpacity="0.72"
-          filter="url(#nnv-glow-sm)">
+        {/* TTS → Hedra */}
+        <path d={connTTSToHedra} fill="none" stroke="#22d3ee" strokeWidth={stTTSToHedra.sw}
+          strokeLinecap="round" strokeDasharray={stTTSToHedra.dash}
+          strokeOpacity={stTTSToHedra.opacity} filter={stTTSToHedra.filter}>
           {/* @ts-ignore */}
-          <animate attributeName="stroke-dashoffset" from="0" to="-26" dur="1.6s" repeatCount="indefinite"/>
+          {stTTSToHedra.animated && <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="0.95s" repeatCount="indefinite"/>}
         </path>
 
         {/* Hedra → LiveKit */}
-        <path d={connHedraToLK} fill="none" stroke="#f97316" strokeWidth="2.6"
-          strokeLinecap="round" strokeDasharray="12 36" strokeOpacity="0.92"
-          filter="url(#nnv-glow-sm)">
+        <path d={connHedraToLK} fill="none" stroke="#f97316" strokeWidth={stHedraToLK.sw}
+          strokeLinecap="round" strokeDasharray={stHedraToLK.dash}
+          strokeOpacity={stHedraToLK.opacity} filter={stHedraToLK.filter}>
           {/* @ts-ignore */}
-          <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="0.9s" repeatCount="indefinite"/>
+          {stHedraToLK.animated && <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="0.9s" repeatCount="indefinite"/>}
         </path>
 
         {/* LiveKit → Output */}
-        <path d={connLKToOut} fill="none" stroke="#a3e635" strokeWidth="2.6"
-          strokeLinecap="round" strokeDasharray="12 36" strokeOpacity="0.92"
-          filter="url(#nnv-glow-sm)">
+        <path d={connLKToOut} fill="none" stroke="#a3e635" strokeWidth={stLKToOut.sw}
+          strokeLinecap="round" strokeDasharray={stLKToOut.dash}
+          strokeOpacity={stLKToOut.opacity} filter={stLKToOut.filter}>
           {/* @ts-ignore */}
-          <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="0.85s" repeatCount="indefinite"/>
+          {stLKToOut.animated && <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="0.85s" repeatCount="indefinite"/>}
         </path>
+
+        {/* Onboarding → session streams */}
+        <path d={connCloneToTTS} fill="none" stroke="#22d3ee" strokeWidth={stCloneToTTS.sw}
+          strokeLinecap="round" strokeDasharray={stCloneToTTS.dash}
+          strokeOpacity={stCloneToTTS.opacity} filter={stCloneToTTS.filter}>
+          {/* @ts-ignore */}
+          {stCloneToTTS.animated && <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="1.1s" repeatCount="indefinite"/>}
+        </path>
+        <path d={connStabToHedra} fill="none" stroke="#fb923c" strokeWidth={stStabToHedra.sw}
+          strokeLinecap="round" strokeDasharray={stStabToHedra.dash}
+          strokeOpacity={stStabToHedra.opacity} filter={stStabToHedra.filter}>
+          {/* @ts-ignore */}
+          {stStabToHedra.animated && <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="1.1s" repeatCount="indefinite"/>}
+        </path>
+
+        {/* Claude → Output direct text stream (bows below, slower = less urgent than voice) */}
+        <path d={connClaudeToOut} fill="none" stroke="#c4b5fd" strokeWidth={stClaudeToOut.sw}
+          strokeLinecap="round" strokeDasharray={stClaudeToOut.dash}
+          strokeOpacity={claudeToOutOk ? "0.75" : stClaudeToOut.opacity} filter={stClaudeToOut.filter}>
+          {/* @ts-ignore */}
+          {stClaudeToOut.animated && <animate attributeName="stroke-dashoffset" from="0" to="-48" dur="1.4s" repeatCount="indefinite"/>}
+        </path>
+        <text x={(CLX + RX) / 2} y={CLY + 128} textAnchor="middle" fontSize="8"
+          fill="#c4b5fd" fillOpacity="0.45" letterSpacing="1">text · chat</text>
 
         {/* Feedback arc */}
         <path d={feedbackD} fill="none" stroke="#38bdf8" strokeWidth="1.8"
-          strokeLinecap="round" strokeDasharray="8 22" strokeOpacity="0.58"
-          filter="url(#nnv-glow-sm)">
+          strokeLinecap="round" strokeDasharray="8 22" strokeOpacity="0.58" filter="url(#nnv-glow-sm)">
           {/* @ts-ignore */}
           <animate attributeName="stroke-dashoffset" from="0" to="-30" dur="2.0s" repeatCount="indefinite"/>
         </path>
-        <text x={310} y={VH - 10} textAnchor="middle" fontSize="8.5" fill="#38bdf8" fillOpacity="0.5">
+        <text x={290} y={VH - 10} textAnchor="middle" fontSize="8.5" fill="#38bdf8" fillOpacity="0.5">
           ↺ session summary saved after each reply — becomes next session&apos;s memory
         </text>
 
-        {/* ── RAG gate (sits on top of streams) ── */}
+        {/* ── RAG gate ── */}
         <g>
           <polygon points={hex(kbGateX, kbGateY, gW + 10, gH + 10, gCut + 3)} fill="#04010c"/>
           <polygon points={hex(kbGateX, kbGateY, gW + 12, gH + 10, gCut + 4)}
@@ -1712,41 +1835,33 @@ function NeuralNetViz({
             height={4} rx="2" fill="#a78bfa" fillOpacity="0.88"/>
         </g>
 
-        {/* ── Section labels ── */}
-        <text x={LX}  y={18} textAnchor="middle" fontSize="8" fill="#323248" fontWeight="600" letterSpacing="2">INPUTS</text>
-        <text x={CLX} y={18} textAnchor="middle" fontSize="8" fill="#504070" fontWeight="600" letterSpacing="2">GENERATION</text>
-        <text x={RX}  y={18} textAnchor="middle" fontSize="8" fill="#2d4a3e" fontWeight="600" letterSpacing="2">OUTPUT</text>
-        <text x={LKX} y={18} textAnchor="middle" fontSize="8" fill="#2a3318" fontWeight="600" letterSpacing="2">DELIVERY</text>
-        <text x={HX}  y={18} textAnchor="middle" fontSize="8" fill="#3d2010" fontWeight="600" letterSpacing="2">ASSEMBLY</text>
-        <text x={CRX} y={18} textAnchor="middle" fontSize="8" fill="#2a1a3a" fontWeight="600" letterSpacing="2">CREATION</text>
-
         {/* ── Input nodes ── */}
         {sources.map((s, i) => (
           <g key={s.id}>
-            <text x={LX - s.r - 11} y={INY[i] - 4} textAnchor="end" fontSize="11.5" fontWeight="600"
+            <text x={LX - IR - 10} y={INY[i] - 4} textAnchor="end" fontSize="11" fontWeight="600"
               fill={s.planned ? "#2a7a74" : (s.active ? "#ddddf0" : "#505060")}>
               {s.label}
             </text>
-            <text x={LX - s.r - 11} y={INY[i] + 11} textAnchor="end" fontSize="9"
+            <text x={LX - IR - 10} y={INY[i] + 10} textAnchor="end" fontSize="8.5"
               fill={s.planned ? "#1e5550" : (s.active ? "#666" : "#383848")}>
               {s.sub}
             </text>
             {s.planned && (
-              <text x={LX - s.r - 11} y={INY[i] + 24} textAnchor="end" fontSize="7" fill="#1a4040" letterSpacing="1">
+              <text x={LX - IR - 10} y={INY[i] + 23} textAnchor="end" fontSize="7" fill="#1a4040" letterSpacing="1">
                 PLANNED
               </text>
             )}
-            <circle cx={LX} cy={INY[i]} r={s.r}
+            <circle cx={LX} cy={INY[i]} r={IR}
               fill={s.color} fillOpacity={s.planned ? 0.07 : (s.active ? 0.14 : 0.05)}
               stroke={s.color} strokeWidth="1.5"
               strokeOpacity={s.planned ? 0.3 : (s.active ? 0.6 : 0.12)}
               strokeDasharray={s.planned ? "5 4" : undefined}/>
-            <text x={LX} y={INY[i] + 5} textAnchor="middle" fontSize="14"
+            <text x={LX} y={INY[i] + 5} textAnchor="middle" fontSize="13"
               fill={s.color} fillOpacity={s.planned ? 0.35 : (s.active ? 1 : 0.22)}>
               {s.icon}
             </text>
             {(s.active && !s.planned) && (
-              <circle cx={LX + s.r - 5} cy={INY[i] - s.r + 5} r="3.5" fill={s.color} filter="url(#nnv-glow-sm)">
+              <circle cx={LX + IR - 4} cy={INY[i] - IR + 4} r="3" fill={s.color} filter="url(#nnv-glow-sm)">
                 {/* @ts-ignore */}
                 <animate attributeName="opacity" values="1;0.2;1" dur="2.4s" repeatCount="indefinite"/>
               </circle>
@@ -1763,32 +1878,21 @@ function NeuralNetViz({
           fill="url(#nnv-rg-claude)" stroke="#a78bfa" strokeWidth="1.5" strokeOpacity="0.8" filter="url(#nnv-glow)"/>
         <text x={CLX} y={CLY - 10} textAnchor="middle" fontSize="22" fill="#c4b5fd" filter="url(#nnv-glow)">◈</text>
         <text x={CLX} y={CLY + 13} textAnchor="middle" fontSize="13" fontWeight="700" fill="#e8e8f0">Claude</text>
-        <text x={CLX} y={CLY + 30} textAnchor="middle" fontSize="10" fill="#a78bfa">{modelLabel(secrets?.primaryModel)}</text>
+        <text x={CLX} y={CLY + 28} textAnchor="middle" fontSize="10" fill="#a78bfa">{modelLabel(secrets?.primaryModel)}</text>
 
-        {/* ── Output node ── */}
-        <circle cx={RX} cy={RY} r={RR + 10} fill="none" stroke="#34d399" strokeWidth="7" strokeOpacity="0.08" filter="url(#nnv-glow)">
+        {/* ── ElevenLabs TTS node (synthesis, session) ── */}
+        <circle cx={TTSX} cy={TTSY} r={TTSR + 8} fill="none" stroke="#22d3ee" strokeWidth="5" strokeOpacity="0.08" filter="url(#nnv-glow)">
           {/* @ts-ignore */}
-          <animate attributeName="strokeOpacity" values="0.06;0.28;0.06" dur="3.0s" repeatCount="indefinite"/>
+          <animate attributeName="strokeOpacity" values="0.04;0.25;0.04" dur="2.1s" repeatCount="indefinite"/>
         </circle>
-        <circle cx={RX} cy={RY} r={RR}
-          fill="url(#nnv-rg-out)" stroke="#34d399" strokeWidth="1.5" strokeOpacity="0.6" filter="url(#nnv-glow)"/>
-        <text x={RX} y={RY - 5}  textAnchor="middle" fontSize="18" fill="#34d399">⊕</text>
-        <text x={RX} y={RY + 13} textAnchor="middle" fontSize="11" fontWeight="600" fill="#d0d0e8">Output</text>
-        <text x={RX} y={RY - RR - 12} textAnchor="middle" fontSize="8" fill="#34d399" fillOpacity="0.55">AI · Avatar · Voice</text>
-
-        {/* ── LiveKit node (delivery) ── */}
-        <circle cx={LKX} cy={LKY} r={LKR + 8} fill="none" stroke="#a3e635" strokeWidth="6" strokeOpacity="0.08" filter="url(#nnv-glow)">
+        <circle cx={TTSX} cy={TTSY} r={TTSR}
+          fill="url(#nnv-rg-tts)" stroke="#22d3ee" strokeWidth="1.5" strokeOpacity="0.7" filter="url(#nnv-glow)"/>
+        <text x={TTSX} y={TTSY + 5} textAnchor="middle" fontSize="15" fill="#22d3ee">♪</text>
+        <text x={TTSX} y={TTSY + TTSR + 15} textAnchor="middle" fontSize="10" fontWeight="600" fill="#ddddf0">ElevenLabs</text>
+        <text x={TTSX} y={TTSY + TTSR + 27} textAnchor="middle" fontSize="8" fill="#0e5a66">TTS · voice</text>
+        <circle cx={TTSX + TTSR - 4} cy={TTSY - TTSR + 4} r="3" fill="#22d3ee" filter="url(#nnv-glow-sm)">
           {/* @ts-ignore */}
-          <animate attributeName="strokeOpacity" values="0.04;0.22;0.04" dur="2.5s" repeatCount="indefinite"/>
-        </circle>
-        <circle cx={LKX} cy={LKY} r={LKR}
-          fill="url(#nnv-rg-lk)" stroke="#a3e635" strokeWidth="1.5" strokeOpacity="0.65" filter="url(#nnv-glow)"/>
-        <text x={LKX} y={LKY + 5} textAnchor="middle" fontSize="16" fill="#a3e635">⬡</text>
-        <text x={LKX} y={LKY + LKR + 16} textAnchor="middle" fontSize="11" fontWeight="600" fill="#ddddf0">LiveKit</text>
-        <text x={LKX} y={LKY + LKR + 28} textAnchor="middle" fontSize="8.5" fill="#4a5e1a">WebRTC stream</text>
-        <circle cx={LKX + LKR - 5} cy={LKY - LKR + 5} r="3.5" fill="#a3e635" filter="url(#nnv-glow-sm)">
-          {/* @ts-ignore */}
-          <animate attributeName="opacity" values="1;0.2;1" dur="2.1s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="1;0.2;1" dur="2.0s" repeatCount="indefinite"/>
         </circle>
 
         {/* ── Hedra node (assembly) ── */}
@@ -1798,61 +1902,117 @@ function NeuralNetViz({
         </circle>
         <circle cx={HX} cy={HY} r={HR}
           fill="url(#nnv-rg-hedra)" stroke="#f97316" strokeWidth="1.5" strokeOpacity="0.7" filter="url(#nnv-glow)"/>
-        <text x={HX} y={HY + 6} textAnchor="middle" fontSize="18" fill="#f97316">▶</text>
-        <text x={HX} y={HY + HR + 16} textAnchor="middle" fontSize="11" fontWeight="600" fill="#ddddf0">Hedra</text>
-        <text x={HX} y={HY + HR + 28} textAnchor="middle" fontSize="8.5" fill="#6b3010">Talking head</text>
-        <circle cx={HX + HR - 5} cy={HY - HR + 5} r="3.5" fill="#f97316" filter="url(#nnv-glow-sm)">
+        <text x={HX} y={HY + 6} textAnchor="middle" fontSize="17" fill="#f97316">▶</text>
+        <text x={HX} y={HY + HR + 15} textAnchor="middle" fontSize="10" fontWeight="600" fill="#ddddf0">Hedra</text>
+        <text x={HX} y={HY + HR + 27} textAnchor="middle" fontSize="8" fill="#6b3010">Lip-sync · avatar</text>
+        <circle cx={HX + HR - 4} cy={HY - HR + 4} r="3" fill="#f97316" filter="url(#nnv-glow-sm)">
           {/* @ts-ignore */}
           <animate attributeName="opacity" values="1;0.2;1" dur="1.9s" repeatCount="indefinite"/>
         </circle>
 
-        {/* ── Creation nodes: Fal · Stability · ElevenLabs ── */}
-        {creationNodes.map((s, i) => (
-          <g key={s.id}>
-            <text x={CRX + CRR + 12} y={CRY[i] - 4} textAnchor="start" fontSize="11.5" fontWeight="600" fill="#ddddf0">
-              {s.label}
-            </text>
-            <text x={CRX + CRR + 12} y={CRY[i] + 11} textAnchor="start" fontSize="9" fill="#666">
-              {s.sub}
-            </text>
-            <circle cx={CRX} cy={CRY[i]} r={CRR}
-              fill={s.color} fillOpacity="0.14"
-              stroke={s.color} strokeWidth="1.5" strokeOpacity="0.65"/>
-            <text x={CRX} y={CRY[i] + 5} textAnchor="middle" fontSize="14" fill={s.color}>
-              {s.icon}
-            </text>
-            <circle cx={CRX - CRR + 5} cy={CRY[i] - CRR + 5} r="3.5" fill={s.color} filter="url(#nnv-glow-sm)">
-              {/* @ts-ignore */}
-              <animate attributeName="opacity" values="1;0.2;1" dur={`${2.0 + i * 0.3}s`} repeatCount="indefinite"/>
+        {/* ── LiveKit node (delivery) ── */}
+        <circle cx={LKX} cy={LKY} r={LKR + 8} fill="none" stroke="#a3e635" strokeWidth="6" strokeOpacity="0.08" filter="url(#nnv-glow)">
+          {/* @ts-ignore */}
+          <animate attributeName="strokeOpacity" values="0.04;0.22;0.04" dur="2.5s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx={LKX} cy={LKY} r={LKR}
+          fill="url(#nnv-rg-lk)" stroke="#a3e635" strokeWidth="1.5" strokeOpacity="0.65" filter="url(#nnv-glow)"/>
+        <text x={LKX} y={LKY + 5} textAnchor="middle" fontSize="15" fill="#a3e635">⬡</text>
+        <text x={LKX} y={LKY + LKR + 15} textAnchor="middle" fontSize="10" fontWeight="600" fill="#ddddf0">LiveKit</text>
+        <text x={LKX} y={LKY + LKR + 27} textAnchor="middle" fontSize="8" fill="#4a5e1a">WebRTC stream</text>
+        <circle cx={LKX + LKR - 4} cy={LKY - LKR + 4} r="3" fill="#a3e635" filter="url(#nnv-glow-sm)">
+          {/* @ts-ignore */}
+          <animate attributeName="opacity" values="1;0.2;1" dur="2.1s" repeatCount="indefinite"/>
+        </circle>
+
+        {/* ── Output node ── */}
+        <circle cx={RX} cy={RY} r={RR + 10} fill="none" stroke="#34d399" strokeWidth="7" strokeOpacity="0.08" filter="url(#nnv-glow)">
+          {/* @ts-ignore */}
+          <animate attributeName="strokeOpacity" values="0.06;0.28;0.06" dur="3.0s" repeatCount="indefinite"/>
+        </circle>
+        <circle cx={RX} cy={RY} r={RR}
+          fill="url(#nnv-rg-out)" stroke="#34d399" strokeWidth="1.5" strokeOpacity="0.6" filter="url(#nnv-glow)"/>
+        <text x={RX} y={RY - 5}  textAnchor="middle" fontSize="17" fill="#34d399">⊕</text>
+        <text x={RX} y={RY + 13} textAnchor="middle" fontSize="11" fontWeight="600" fill="#d0d0e8">Output</text>
+        <text x={RX} y={RY + 26} textAnchor="middle" fontSize="8" fill="#34d399" fillOpacity="0.7">AI · Avatar</text>
+
+        {/* ── Onboarding nodes — active state driven by API key status ── */}
+        {([
+          { cx: CLONE_X, label: "ElevenLabs Clone", sub: "voice model training",    color: "#22d3ee", icon: "♪", active: cloneActive },
+          { cx: STAB_X,  label: "Stability AI",     sub: "avatar portrait · Hedra", color: "#fb923c", icon: "◈", active: stabActive  },
+        ] as { cx: number; label: string; sub: string; color: string; icon: string; active: boolean }[]).map((n) => (
+          <g key={n.label}>
+            {/* Outer pulse ring */}
+            <circle cx={n.cx} cy={OB_Y} r={OB_R + 8} fill="none" stroke={n.color}
+              strokeWidth={n.active ? "6" : "4"} strokeOpacity={n.active ? 0.08 : 0.04} filter="url(#nnv-glow)">
+              {n.active && (
+                /* @ts-ignore */
+                <animate attributeName="strokeOpacity" values="0.04;0.22;0.04" dur="2.4s" repeatCount="indefinite"/>
+              )}
             </circle>
+            {/* Main circle */}
+            <circle cx={n.cx} cy={OB_Y} r={OB_R}
+              fill={n.color} fillOpacity={n.active ? 0.14 : 0.07}
+              stroke={n.color} strokeWidth="1.5"
+              strokeOpacity={n.active ? 0.6 : 0.3}
+              strokeDasharray={n.active ? undefined : "5 4"}/>
+            {/* Icon */}
+            <text x={n.cx} y={OB_Y + 5} textAnchor="middle" fontSize="14"
+              fill={n.color} fillOpacity={n.active ? 1 : 0.35}>
+              {n.icon}
+            </text>
+            {/* Active indicator dot */}
+            {n.active && (
+              <circle cx={n.cx + OB_R - 5} cy={OB_Y - OB_R + 5} r="3.5" fill={n.color} filter="url(#nnv-glow-sm)">
+                {/* @ts-ignore */}
+                <animate attributeName="opacity" values="1;0.2;1" dur="2.3s" repeatCount="indefinite"/>
+              </circle>
+            )}
+            {/* Labels below node */}
+            <text x={n.cx} y={OB_Y + OB_R + 14} textAnchor="middle" fontSize="9.5" fontWeight="600"
+              fill={n.color} fillOpacity={n.active ? 0.85 : 0.3}>
+              {n.label}
+            </text>
+            <text x={n.cx} y={OB_Y + OB_R + 26} textAnchor="middle" fontSize="8"
+              fill={n.color} fillOpacity={n.active ? 0.5 : 0.18}>
+              {n.sub}
+            </text>
+            {!n.active && (
+              <text x={n.cx} y={OB_Y + OB_R + 37} textAnchor="middle" fontSize="7"
+                fill={n.color} fillOpacity="0.25" letterSpacing="1">NOT SET</text>
+            )}
           </g>
         ))}
 
-      </svg>
+        {/* Voice pipeline label — sits above the LiveKit → Output connection bow */}
+        <text x={(LKX + RX) / 2} y={LKY - LKR - 30} textAnchor="middle" fontSize="7.5"
+          fill="#a3e635" fillOpacity="0.45" letterSpacing="1">voice · chat</text>
 
-      {/* Legend */}
-      <div className="px-6 py-4 flex flex-wrap items-center justify-center gap-4"
-        style={{ borderTop: "1px solid rgba(0,0,0,0.06)" }}>
-        {([
-          { color: "#f87171", label: "Brain Config — always injected",            dim: false },
-          { color: "#a78bfa", label: "Knowledge Base — if similarity ≥ threshold",dim: false },
-          { color: "#34d399", label: "HealthKit — live biometric data",           dim: false },
-          { color: "#2dd4bf", label: "Wearables — Oura · Whoop (planned)",        dim: true  },
-          { color: "#38bdf8", label: "Session Memory — feedback loop",            dim: false },
-          { color: "#f59e0b", label: "Claude Training — always available",        dim: false },
-          { color: "#e879f9", label: "Fal.AI — body avatar generation",           dim: false },
-          { color: "#fb923c", label: "Stability AI — face portrait for app UI (not Hedra)", dim: false },
-          { color: "#22d3ee", label: "ElevenLabs — voice clone · TTS",            dim: false },
-          { color: "#f97316", label: "Hedra — talking head assembly",             dim: false },
-          { color: "#a3e635", label: "LiveKit — WebRTC delivery",                 dim: false },
-        ] as { color: string; label: string; dim: boolean }[]).map(item => (
-          <div key={item.label} className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full flex-shrink-0"
-              style={{ background: item.color, opacity: item.dim ? 0.45 : 1 }}/>
-            <span className="text-xs" style={{ color: item.dim ? "#2a5050" : "#555" }}>{item.label}</span>
-          </div>
-        ))}
-      </div>
+      </svg>
     </div>
+
+    {/* Legend — outside the dark box */}
+    <div className="mt-4 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 px-4">
+      {([
+        { color: "#f87171", label: "Brain Config — always injected" },
+        { color: "#a78bfa", label: "Knowledge Base — RAG filtered" },
+        { color: "#34d399", label: "HealthKit — live biometrics" },
+        { color: "#2dd4bf", label: "Wearables (planned)", dim: true },
+        { color: "#38bdf8", label: "Session Memory — feedback loop" },
+        { color: "#f59e0b", label: "Claude Training" },
+        { color: "#c4b5fd", label: "Direct text · chat output (no voice)" },
+        { color: "#22d3ee", label: "ElevenLabs — voice clone (setup) · TTS (session)" },
+        { color: "#fb923c", label: "Stability AI — waist-up avatar portrait (setup) → Hedra" },
+        { color: "#f97316", label: "Hedra — animated avatar (lip-sync · body)" },
+        { color: "#a3e635", label: "LiveKit — WebRTC delivery" },
+      ] as { color: string; label: string; dim?: boolean }[]).map(item => (
+        <div key={item.label} className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-full flex-shrink-0"
+            style={{ background: item.color, opacity: item.dim ? 0.4 : 1 }}/>
+          <span className="text-xs" style={{ color: item.dim ? "#94a3b8" : "#64748b" }}>{item.label}</span>
+        </div>
+      ))}
+    </div>
+    </>
   );
 }
